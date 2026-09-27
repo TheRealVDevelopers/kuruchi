@@ -1,0 +1,252 @@
+rules_version = '2';
+
+/**
+ * Kurchi Projects — Firestore security rules.
+ *
+ * These are the server-side half of docs/01-roles-and-permissions.md. The UI
+ * hides fields and the repository redacts them, but neither is a control: a
+ * client can call the API directly. Anything that matters is enforced here.
+ *
+ * Role comes from a CUSTOM CLAIM on the ID token, set by a Cloud Function.
+ * It is never read from the user's own Firestore document — a role a user can
+ * edit is not a role.
+ *
+ * Test with:  firebase emulators:exec --only firestore "npm run test:rules"
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ----------------------------------------------------------- helpers */
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function isSuper()  { return signedIn() && role() == 'SUPER_ADMIN'; }
+    function isAdmin()  { return signedIn() && role() == 'ADMIN'; }
+    function isAccts()  { return signedIn() && role() == 'ACCOUNTS'; }
+    function isSite()   { return signedIn() && role() == 'INSTALLATION'; }
+    function isClient() { return signedIn() && role() == 'CLIENT'; }
+
+    function activeUser() {
+      return signedIn() && request.auth.token.active == true;
+    }
+
+    /** AC-04 — a client only ever sees its own projects. */
+    function ownsProject(project) {
+      return isClient() && project.clientId == request.auth.token.clientId;
+    }
+
+    /** AC-05 — an installer only ever sees sites assigned to their crew. */
+    function assignedToProject(project) {
+      return isSite() && project.installationTeamId == request.auth.token.teamId;
+    }
+
+    function canReadProject(project) {
+      return isSuper() || isAdmin() || isAccts()
+          || ownsProject(project) || assignedToProject(project);
+    }
+
+    function projectOf(pid) {
+      return get(/databases/$(database)/documents/projects/$(pid)).data;
+    }
+
+    /** Only the named fields changed, nothing else. */
+    function onlyChanging(allowed) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    /* ------------------------------------------------------------- users */
+
+    match /users/{uid} {
+      // Everyone may read their own record; Admin sees the directory.
+      allow read: if isAdmin() || isSuper() || (signedIn() && request.auth.uid == uid);
+
+      // Roles are assigned by a Cloud Function using the Admin SDK, which
+      // bypasses these rules. No client may write a role, including Admin.
+      allow write: if false;
+    }
+
+    /* ------------------------------------------------- reference data */
+
+    match /products/{id}   { allow read: if true;        allow write: if isAdmin(); }
+    match /kits/{id}       { allow read: if signedIn();  allow write: if isAdmin(); }
+    match /clients/{id}    { allow read: if isAdmin() || isSuper() || isAccts(); allow write: if isAdmin(); }
+    match /programmes/{id} { allow read: if signedIn();  allow write: if isAdmin(); }
+    match /vendors/{id}    { allow read: if isAdmin() || isSuper() || isAccts(); allow write: if isAdmin(); }
+
+    // The public contact form may create, and nobody but staff may read.
+    match /enquiries/{id} {
+      allow create: if true;
+      allow read:   if isAdmin() || isSuper();
+      allow update, delete: if false;
+    }
+
+    /* ---------------------------------------------------------- projects */
+
+    match /projects/{pid} {
+      allow read: if canReadProject(resource.data);
+
+      // AC-01 — Super Admin is deliberately excluded from every write path.
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        // The client approves or rejects its own BOQ, and signs handover.
+        || (ownsProject(resource.data)
+            && onlyChanging(['status', 'statusUpdatedAt']))
+        // The site crew confirms readiness on its own sites.
+        || (assignedToProject(resource.data)
+            && onlyChanging(['siteReadiness', 'statusUpdatedAt']));
+
+      /* ------------------------------------------------------ BOQ items */
+
+      match /items/{iid} {
+        allow read: if canReadProject(projectOf(pid));
+        allow create, delete: if isAdmin();
+
+        allow update: if isAdmin()
+          || (assignedToProject(projectOf(pid))
+              && onlyChanging([
+                   'status', 'statusUpdatedAt',
+                   'qtyReceived', 'qtyInstalled', 'zone'
+                 ]));
+
+        /**
+         * AC-02 and AC-03 — the money.
+         *
+         * Pricing lives in its own document precisely so this rule can exist.
+         * CLIENT and INSTALLATION are not listed, so base price, landed cost,
+         * vendor and margin never leave the server for them. Selling and final
+         * price reach the client on the parent item document instead.
+         */
+        match /private/{doc} {
+          allow read:  if isSuper() || isAdmin() || isAccts();
+          allow write: if isAdmin();
+        }
+      }
+
+      /* ------------------------------------------------------- logistics */
+
+      match /crates/{cid} {
+        allow read: if canReadProject(projectOf(pid));
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin()
+          || (assignedToProject(projectOf(pid))
+              && onlyChanging(['receivedAt', 'receivedBy', 'receiptPhotos']));
+      }
+
+      match /consignments/{cid} {
+        allow read: if canReadProject(projectOf(pid));
+        allow create, delete: if isAdmin();
+        // Accounts fills the tax fields; Admin does everything else.
+        allow update: if isAdmin()
+          || (isAccts() && onlyChanging([
+                'challanId', 'ewayBillNo', 'ewayBillValidTill',
+                'transporterName', 'vehicleNo'
+              ]));
+      }
+
+      /* ---------------------------------------------------- site records */
+
+      match /tickets/{tid} {
+        allow read: if canReadProject(projectOf(pid));
+        // ST-02 is enforced in the Cloud Function; the shape check is here.
+        allow create: if (isAdmin() || assignedToProject(projectOf(pid)))
+          && request.resource.data.photos.size() > 0
+          && request.resource.data.cause is string;
+        allow update: if isAdmin();
+        allow delete: if false;
+      }
+
+      match /snags/{sid} {
+        allow read: if canReadProject(projectOf(pid));
+        allow create: if (isAdmin()
+                        || assignedToProject(projectOf(pid))
+                        || ownsProject(projectOf(pid)))
+          && request.resource.data.photos.size() > 0;
+        allow update: if isAdmin() || assignedToProject(projectOf(pid));
+        allow delete: if false;
+      }
+
+      match /progressLogs/{lid} {
+        allow read: if canReadProject(projectOf(pid));
+        // IN-02 — a progress update carries at least one photo.
+        allow create: if assignedToProject(projectOf(pid))
+          && request.resource.data.photos.size() > 0;
+        allow update, delete: if false;
+      }
+
+      /** Everyone in scope may comment — including Super Admin (AC-01). */
+      match /comments/{cid} {
+        allow read: if canReadProject(projectOf(pid));
+        allow create: if canReadProject(projectOf(pid))
+          && request.resource.data.byUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      match /documents/{did} {
+        allow read: if canReadProject(projectOf(pid));
+        allow write: if isAdmin();
+      }
+    }
+
+    /* ----------------------------------------------------------- finance */
+
+    match /challans/{id} {
+      allow read: if isAdmin() || isSuper() || isAccts()
+                  || (isClient() && resource.data.clientId == request.auth.token.clientId);
+      allow create: if isAccts();
+      // FN-07 in spirit — an issued tax document is not edited in place.
+      allow update, delete: if false;
+    }
+
+    match /invoices/{id} {
+      allow read: if isAdmin() || isSuper() || isAccts()
+                  || (isClient() && resource.data.clientId == request.auth.token.clientId);
+      allow create: if isAccts();
+      // Only the payment position may move; the document itself is immutable.
+      allow update: if isAccts()
+        && onlyChanging(['amountReceived', 'status', 'creditNoteId']);
+      allow delete: if false;
+    }
+
+    match /payments/{id} {
+      allow read:   if isAdmin() || isSuper() || isAccts();
+      allow create: if isAccts();
+      allow update, delete: if false;
+    }
+
+    match /vendorBills/{id} {
+      allow read:   if isAdmin() || isSuper() || isAccts();
+      allow write:  if isAccts();
+    }
+
+    /* ------------------------------------------------------------- audit */
+
+    /**
+     * Written only by Cloud Functions (Admin SDK bypasses rules). Readable by
+     * the people who settle disputes, and editable by nobody — an audit log you
+     * can rewrite is not an audit log.
+     */
+    match /auditLog/{id} {
+      allow read:  if isAdmin() || isSuper() || isAccts();
+      allow write: if false;
+    }
+
+    match /counters/{id} {
+      // FN-06 — document numbers are allocated server-side, in a transaction.
+      allow read, write: if false;
+    }
+
+    /* --------------------------------------------------------- catch-all */
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

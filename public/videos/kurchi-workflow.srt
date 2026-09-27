@@ -1,0 +1,49 @@
+1
+00:00:00,000 --> 00:00:06,000
+KURCHI PROJECTS — SHOWROOM WORKFLOW
+What is happening: One rollout is managed from first client setup through signed handover.
+
+2
+00:00:06,000 --> 00:00:12,000
+STEP 1 — CREATE CLIENT
+Admin is adding the client, GST details, contacts and showroom rollout programme.
+
+3
+00:00:12,000 --> 00:00:18,000
+STEP 2 — CREATE SHOWROOM PROJECT
+Admin is adding the city, site address, opening date and installation team.
+
+4
+00:00:18,000 --> 00:00:24,000
+STEP 3 — BUILD THE BOQ
+Admin is adding chairs, sofas, storage and tables with quantities, pricing and sourcing.
+
+5
+00:00:24,000 --> 00:00:30,000
+STEP 4 — CLIENT APPROVAL
+Client is reviewing the agreed scope and approving the BOQ before work begins.
+
+6
+00:00:30,000 --> 00:00:36,000
+STEP 5 — PLAN SUPPLIERS
+Admin is creating the schedule and issuing purchase orders with promised delivery dates.
+
+7
+00:00:36,000 --> 00:00:42,000
+STEP 6 — DISPATCH AND IN TRANSIT
+Kurchi is recording crates, transporter, LR, vehicle, challan, e-way bill and ETA.
+
+8
+00:00:42,000 --> 00:00:48,000
+STEP 7 — INSTALLATION AT SITE
+The installation team receives crates, uploads proof, marks items installed and reports issues.
+
+9
+00:00:48,000 --> 00:00:54,000
+STEP 8 — RESOLVE AND BILL
+Admin resolves snags while Accounts creates invoices, records receipts and tracks vendor bills.
+
+10
+00:00:54,000 --> 00:01:00,000
+STEP 9 — HANDOVER COMPLETE
+Client signs handover. The showroom is complete and moves into DLP and retention tracking.

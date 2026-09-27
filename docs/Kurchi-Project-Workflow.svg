@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Kurchi Projects simple project workflow</title>
+  <desc id="desc">A simple workflow from project creation to client handover, showing Admin, Accounts, Installation Team, Client, and Super Admin responsibilities.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#101828"/><stop offset="1" stop-color="#172554"/></linearGradient>
+    <linearGradient id="accent" x1="0" x2="1"><stop stop-color="#39d98a"/><stop offset="1" stop-color="#39bdf8"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity=".32"/></filter>
+    <style>
+      .title{font:700 46px Arial,sans-serif;fill:#f8fafc}.sub{font:400 19px Arial,sans-serif;fill:#cbd5e1}.num{font:700 18px Arial,sans-serif;fill:#082f49}.role{font:700 14px Arial,sans-serif;letter-spacing:1.7px;fill:#94a3b8}.head{font:700 23px Arial,sans-serif;fill:#f8fafc}.body{font:400 17px Arial,sans-serif;fill:#cbd5e1}.small{font:400 15px Arial,sans-serif;fill:#cbd5e1}.pill{font:700 14px Arial,sans-serif;fill:#ecfeff}.foot{font:700 17px Arial,sans-serif;fill:#f8fafc}
+    </style>
+  </defs>
+  <rect width="1600" height="1200" fill="url(#bg)"/>
+  <circle cx="1450" cy="-30" r="270" fill="#0ea5e9" opacity=".12"/><circle cx="90" cy="1130" r="260" fill="#22c55e" opacity=".09"/>
+  <text x="90" y="90" class="title">Kurchi Projects — simple workflow</text>
+  <text x="90" y="126" class="sub">From a new showroom requirement to a completed handover</text>
+  <rect x="90" y="162" width="1420" height="3" rx="2" fill="url(#accent)"/>
+
+  <!-- Step 1 -->
+  <g filter="url(#shadow)"><rect x="90" y="215" width="410" height="255" rx="24" fill="#1e293b" stroke="#334155"/></g>
+  <circle cx="135" cy="260" r="23" fill="url(#accent)"/><text x="129" y="267" class="num">1</text>
+  <text x="180" y="255" class="role">ADMIN</text><text x="180" y="287" class="head">Create the project</text>
+  <text x="125" y="335" class="body">• Add the client and showroom location</text><text x="125" y="366" class="body">• Choose the project dates and team</text><text x="125" y="397" class="body">• Add required products and quantities</text><text x="125" y="428" class="small">Example: Delhi Ola showroom</text>
+
+  <!-- Step 2 -->
+  <g filter="url(#shadow)"><rect x="595" y="215" width="410" height="255" rx="24" fill="#1e293b" stroke="#334155"/></g>
+  <circle cx="640" cy="260" r="23" fill="url(#accent)"/><text x="634" y="267" class="num">2</text>
+  <text x="685" y="255" class="role">ADMIN + CLIENT</text><text x="685" y="287" class="head">Prepare and approve BOQ</text>
+  <text x="630" y="335" class="body">• Add product, quantity and pricing</text><text x="630" y="366" class="body">• Build the quotation / BOQ</text><text x="630" y="397" class="body">• Send to the client for approval</text><text x="630" y="428" class="small">Client approves or asks for changes</text>
+
+  <!-- Step 3 -->
+  <g filter="url(#shadow)"><rect x="1100" y="215" width="410" height="255" rx="24" fill="#1e293b" stroke="#334155"/></g>
+  <circle cx="1145" cy="260" r="23" fill="url(#accent)"/><text x="1139" y="267" class="num">3</text>
+  <text x="1190" y="255" class="role">ADMIN + VENDOR</text><text x="1190" y="287" class="head">Source and send items</text>
+  <text x="1135" y="335" class="body">• Create purchase orders for vendors</text><text x="1135" y="366" class="body">• Track making, packing and dispatch</text><text x="1135" y="397" class="body">• Share delivery details with the site</text><text x="1135" y="428" class="small">Every item has a clear status</text>
+
+  <!-- connectors -->
+  <path d="M500 342H570" stroke="#39d98a" stroke-width="5" stroke-linecap="round"/><path d="M560 329l18 13-18 13" fill="none" stroke="#39d98a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1005 342H1075" stroke="#39d98a" stroke-width="5" stroke-linecap="round"/><path d="M1065 329l18 13-18 13" fill="none" stroke="#39d98a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1305 490V550" stroke="#39d98a" stroke-width="5" stroke-linecap="round"/><path d="M1292 540l13 18 13-18" fill="none" stroke="#39d98a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 4 -->
+  <g filter="url(#shadow)"><rect x="1090" y="585" width="420" height="230" rx="24" fill="#1e293b" stroke="#334155"/></g>
+  <circle cx="1135" cy="630" r="23" fill="url(#accent)"/><text x="1129" y="637" class="num">4</text>
+  <text x="1180" y="625" class="role">ACCOUNTS</text><text x="1180" y="657" class="head">Manage documents and billing</text>
+  <text x="1130" y="705" class="body">• Create invoice and vendor bills</text><text x="1130" y="736" class="body">• Prepare challan and E-way bill</text><text x="1130" y="767" class="body">• Track payment and tax details</text>
+
+  <!-- Step 5 -->
+  <g filter="url(#shadow)"><rect x="560" y="585" width="420" height="330" rx="24" fill="#123040" stroke="#39d98a" stroke-width="2"/></g>
+  <circle cx="605" cy="630" r="23" fill="url(#accent)"/><text x="599" y="637" class="num">5</text>
+  <text x="650" y="625" class="role">INSTALLATION TEAM · MOBILE</text><text x="650" y="657" class="head">Receive, fit and update</text>
+  <text x="600" y="705" class="body">• Scan / confirm the items received</text><text x="600" y="736" class="body">• Mark: ready to fit → fitting → complete</text><text x="600" y="767" class="body">• Report damage or missing items with photos</text><text x="600" y="798" class="body">• Quick update: started / in progress / waiting</text><text x="600" y="844" class="small">Simple phone screen — no pricing shown</text>
+
+  <!-- Step 6 -->
+  <g filter="url(#shadow)"><rect x="90" y="585" width="370" height="330" rx="24" fill="#1e293b" stroke="#334155"/></g>
+  <circle cx="135" cy="630" r="23" fill="url(#accent)"/><text x="129" y="637" class="num">6</text>
+  <text x="180" y="625" class="role">CLIENT</text><text x="180" y="657" class="head">See project progress</text>
+  <text x="130" y="705" class="body">• Approve the BOQ</text><text x="130" y="736" class="body">• See delivery and site updates</text><text x="130" y="767" class="body">• View installation photos</text><text x="130" y="798" class="body">• Receive completion confirmation</text><text x="130" y="844" class="small">Client never sees internal costs</text>
+
+  <path d="M560 750H490" stroke="#39d98a" stroke-width="5" stroke-linecap="round"/><path d="M500 737l-18 13 18 13" fill="none" stroke="#39d98a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M980 750H1060" stroke="#39d98a" stroke-width="5" stroke-linecap="round"/><path d="M1050 737l18 13-18 13" fill="none" stroke="#39d98a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Finish + oversight -->
+  <g filter="url(#shadow)"><rect x="90" y="1000" width="930" height="120" rx="24" fill="#0f3b38" stroke="#39d98a"/></g>
+  <text x="125" y="1042" class="role">FINAL STEP</text><text x="125" y="1080" class="head">Installation completed → client handover → project closed</text>
+  <text x="125" y="1103" class="small">All updates, photos, delivery records and financial documents remain in one project file.</text>
+  <g filter="url(#shadow)"><rect x="1060" y="1000" width="450" height="120" rx="24" fill="#1e293b" stroke="#334155"/></g>
+  <text x="1095" y="1042" class="role">SUPER ADMIN VIEW</text><text x="1095" y="1080" class="head">See every project</text><text x="1095" y="1103" class="small">Progress • delays • spend • profit • issues</text>
+  <path d="M770 915V970" stroke="#39d98a" stroke-width="5" stroke-linecap="round"/><path d="M757 960l13 18 13-18" fill="none" stroke="#39d98a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

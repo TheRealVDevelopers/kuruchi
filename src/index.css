@@ -1,0 +1,247 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Kurchi Projects — modern rollout workspace.
+ *
+ * Built as a calm, minimal workspace: one visual language, one primary action,
+ * plenty of breathing room and clear touch targets.
+ *
+ * Density is driven from one place — the root font size. Tailwind sizes in rem,
+ * so dropping the root to 14px on desktop tightens type, padding and gaps
+ * together, proportionally, without editing a thousand class names. Phones keep
+ * 15px because a thumb is a blunter instrument than a mouse.
+ *
+ *   red      — `bright-red` at 600–800; signal only, never decoration
+ *   neutrals — warm `stone`
+ *   type     — Nunito, with tabular figures wherever digits line up
+ */
+
+@layer base {
+  :root {
+    font-size: 15px;
+
+    --background: 40 23% 97%;
+    --foreground: 222 19% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 19% 14%;
+
+    --sunken: 40 18% 94%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 19% 14%;
+
+    --primary: 160 53% 29%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 18% 94%;
+    --secondary-foreground: 222 19% 14%;
+
+    --muted: 40 18% 94%;
+    --muted-foreground: 220 9% 42%;
+
+    --accent: 157 35% 92%;
+    --accent-foreground: 160 53% 25%;
+
+    --destructive: 0 65% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Two border weights: the outline of a thing, and the rules inside it. */
+    --border: 35 13% 85%;
+    --grid: 35 13% 90%;
+    --input: 35 13% 78%;
+    --ring: 160 53% 29%;
+
+    --rail: 160 22% 12%;
+    --rail-foreground: 40 23% 97%;
+    --rail-muted: 155 12% 65%;
+    --rail-hover: 160 19% 18%;
+    --rail-border: 160 16% 22%;
+
+    --radius: 1rem;
+
+    /* One knob for row height across every table in the app. */
+    --row-h: 2.125rem;
+  }
+
+  @media (min-width: 768px) {
+    :root { font-size: 14px; }
+  }
+
+  .dark {
+    --background: 160 16% 8%;
+    --foreground: 40 23% 96%;
+
+    --card: 160 13% 12%;
+    --card-foreground: 40 23% 96%;
+
+    --sunken: 160 11% 16%;
+
+    --popover: 160 13% 12%;
+    --popover-foreground: 40 23% 96%;
+
+    --primary: 154 57% 52%;
+    --primary-foreground: 160 16% 8%;
+
+    --secondary: 160 10% 19%;
+    --secondary-foreground: 40 23% 96%;
+
+    --muted: 160 10% 18%;
+    --muted-foreground: 155 9% 65%;
+
+    --accent: 155 26% 20%;
+    --accent-foreground: 154 57% 70%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 160 9% 24%;
+    --grid: 160 9% 19%;
+    --input: 160 9% 27%;
+    --ring: 154 57% 52%;
+
+    --rail: 160 19% 7%;
+    --rail-foreground: 40 23% 96%;
+    --rail-muted: 155 9% 57%;
+    --rail-hover: 160 14% 14%;
+    --rail-border: 160 10% 18%;
+  }
+
+  .light {
+    --background: 40 23% 97%;
+    --foreground: 222 19% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 18% 13%;
+    --sunken: 35 20% 93%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 18% 13%;
+    --primary: 160 53% 29%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 18% 94%;
+    --secondary-foreground: 220 18% 13%;
+    --muted: 40 18% 94%;
+    --muted-foreground: 220 9% 43%;
+    --accent: 157 35% 92%;
+    --accent-foreground: 160 53% 25%;
+    --border: 35 13% 85%;
+    --grid: 35 13% 90%;
+    --input: 35 13% 78%;
+    --ring: 160 53% 29%;
+    --rail: 160 22% 12%;
+    --rail-foreground: 40 23% 97%;
+    --rail-muted: 155 12% 65%;
+    --rail-hover: 160 19% 18%;
+    --rail-border: 160 16% 22%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-size: 0.9375rem;
+    -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(circle at 100% 0%, hsl(154 45% 45% / .08), transparent 30rem);
+  }
+
+  html { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+  code, kbd, samp, pre,
+  input, select, textarea, button,
+  svg text { font-family: inherit; }
+
+  /* A terminal lives on aligned digits. Make it the default, not an opt-in. */
+  .tabular-nums,
+  table,
+  input[type="number"] { font-variant-numeric: tabular-nums; }
+
+  h1, h2, h3, h4 {
+    @apply font-bold tracking-tight;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-1 ring-offset-background;
+  }
+
+  /* Thin scrollbars — chrome should not eat the data area. */
+  * { scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  .kurchi-wordmark { @apply font-extrabold text-primary; }
+
+  /* Column headers and field labels. Small, wide, quiet. */
+  .eyebrow {
+    @apply text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  .figure    { @apply text-xl font-extrabold tabular-nums tracking-tight; }
+  .figure-lg { @apply text-2xl font-extrabold tabular-nums tracking-tight sm:text-3xl; }
+
+  .glass-panel { @apply border bg-card/95 shadow-sm; }
+  .visual-card { @apply overflow-hidden rounded-2xl border bg-card shadow-sm transition duration-200 hover:border-primary/35 hover:shadow-md; }
+
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button { transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease; }
+  button:active { transform: scale(.98); }
+
+  .sunken { background-color: hsl(var(--sunken)); }
+
+  /**
+   * The terminal grid.
+   *
+   * Vertical rules between cells are the thing that makes a dense table
+   * readable — without them the eye loses the column on row 40. Applied to
+   * every data table in the app.
+   */
+  .grid-table { @apply w-full border-separate border-spacing-0; }
+
+  .grid-table thead th {
+    @apply sticky top-0 z-10 border-b border-r px-2.5 text-left align-middle;
+    height: var(--row-h);
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--sunken));
+    @apply text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground;
+  }
+
+  .grid-table thead th:last-child { @apply border-r-0; }
+
+  .grid-table tbody td {
+    @apply border-b border-r px-2.5 align-middle;
+    height: var(--row-h);
+    border-color: hsl(var(--grid));
+  }
+
+  .grid-table tbody td:last-child { @apply border-r-0; }
+  .grid-table tbody tr:last-child td { @apply border-b-0; }
+  .grid-table tbody tr:hover td { background-color: hsl(var(--sunken) / 0.6); }
+
+  /* Numeric columns right-align and never wrap. */
+  .num { @apply whitespace-nowrap text-right tabular-nums; }
+
+  /* Keyboard hint, used in the shortcut bar and the command palette. */
+  .kbd {
+    @apply inline-grid min-w-[1.25rem] place-items-center rounded border border-b-2 px-1 py-0.5
+           text-[10px] font-bold text-muted-foreground;
+    background-color: hsl(var(--sunken));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
