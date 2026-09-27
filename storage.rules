@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function staff() { return signedIn() && request.auth.token.role in ['ADMIN', 'ACCOUNTS', 'SUPER_ADMIN']; }
+
+    // Ola can upload a payment screenshot before its project ID exists. The
+    // owner and Accounts/Admin can read it; every other user is excluded.
+    match /pending-payment-proofs/{uid}/{fileName} {
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+      allow read: if staff() || (signedIn() && request.auth.uid == uid);
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

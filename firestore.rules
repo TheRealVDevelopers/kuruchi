@@ -33,10 +33,6 @@ service cloud.firestore {
     function isSite()   { return signedIn() && role() == 'INSTALLATION'; }
     function isClient() { return signedIn() && role() == 'CLIENT'; }
 
-    function activeUser() {
-      return signedIn() && request.auth.token.active == true;
-    }
-
     /** AC-04 — a client only ever sees its own projects. */
     function ownsProject(project) {
       return isClient() && project.clientId == request.auth.token.clientId;
@@ -69,6 +65,19 @@ service cloud.firestore {
 
       // Roles are assigned by a Cloud Function using the Admin SDK, which
       // bypasses these rules. No client may write a role, including Admin.
+      allow write: if false;
+    }
+
+    // A safe, role-resolved profile returned after Firebase email or OTP login.
+    // It is written only by Cloud Functions using the Admin SDK.
+    match /workspaceProfiles/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn() && (isAdmin() || isSuper() || isAccts()
+        || resource.data.role == role());
       allow write: if false;
     }
 

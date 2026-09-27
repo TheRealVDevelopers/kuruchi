@@ -17,6 +17,7 @@
 
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -90,4 +91,61 @@ exports.runInstallationSlaCheck = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Only Kurchi Admin can run this check.");
   }
   return checkInstallationStartSla();
+});
+
+const ROLES = new Set(["SUPER_ADMIN", "ADMIN", "ACCOUNTS", "INSTALLATION", "CLIENT", "VENDOR"]);
+
+function requireAdmin(request) {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  if (request.auth.token.role !== "ADMIN") throw new HttpsError("permission-denied", "Only Kurchi Admin can invite users.");
+}
+
+/**
+ * Creates or updates a real Firebase user, assigns their workspace role, and
+ * stores the safe profile used by the web app. The initial Admin needs to be
+ * granted the ADMIN custom claim once from a trusted server-side setup.
+ */
+exports.provisionWorkspaceUser = onCall(async (request) => {
+  requireAdmin(request);
+  const data = request.data || {};
+  if (!ROLES.has(data.role)) throw new HttpsError("invalid-argument", "Choose a valid workspace role.");
+  if (!data.email && !data.phoneNumber) throw new HttpsError("invalid-argument", "Provide an email address or mobile number.");
+  if (data.phoneNumber && !/^\+[1-9]\d{7,14}$/.test(data.phoneNumber)) {
+    throw new HttpsError("invalid-argument", "Use an E.164 mobile number, for example +919876543210.");
+  }
+
+  const admin = getAuth();
+  let user;
+  try {
+    user = data.email ? await admin.getUserByEmail(data.email.trim().toLowerCase()) : await admin.getUserByPhoneNumber(data.phoneNumber);
+    user = await admin.updateUser(user.uid, { displayName: data.name?.trim() || user.displayName, phoneNumber: data.phoneNumber || user.phoneNumber });
+  } catch (error) {
+    if (error.code !== "auth/user-not-found") throw error;
+    user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, displayName: data.name?.trim(), disabled: false });
+  }
+
+  const claims = { role: data.role, active: true, clientId: data.clientId || null, teamId: data.teamId || null };
+  await admin.setCustomUserClaims(user.uid, claims);
+  const profile = {
+    uid: user.uid,
+    name: data.name?.trim() || user.displayName || "Kurchi user",
+    email: data.email?.trim().toLowerCase() || user.email || "",
+    role: data.role,
+    active: true,
+    clientId: data.clientId || undefined,
+    teamId: data.teamId || undefined,
+    phoneNumber: data.phoneNumber || user.phoneNumber || undefined,
+    provisionedAt: FieldValue.serverTimestamp(),
+    provisionedBy: request.auth.uid,
+  };
+  await getFirestore().collection("workspaceProfiles").doc(user.uid).set(profile, { merge: true });
+  return { uid: user.uid, email: user.email || null, phoneNumber: user.phoneNumber || null, role: data.role };
+});
+
+/** Returns the signed-in user's safe workspace profile after email or OTP login. */
+exports.getMyWorkspaceProfile = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const profile = await getFirestore().collection("workspaceProfiles").doc(request.auth.uid).get();
+  if (!profile.exists) throw new HttpsError("not-found", "This account has not been invited to Kurchi Projects.");
+  return profile.data();
 });

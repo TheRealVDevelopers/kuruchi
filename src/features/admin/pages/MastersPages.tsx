@@ -12,6 +12,8 @@ import { AddButton, EditPanel, Field, NumField, SelectField, TextArea } from "@/
 import { DataStatus } from "@/components/app/DataStatus";
 import { formatINR } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { functions } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
 import type { AppUser, Client, Kit, Product, Programme, Vendor } from "@/types";
 
 const STATES = [
@@ -588,6 +590,7 @@ export function UsersPage() {
   useDb();
   const { user } = useAuth();
   const run = useAction();
+  const [inviting, setInviting] = useState(false);
   if (!user) return null;
 
   const users = repo.users();
@@ -633,16 +636,20 @@ export function UsersPage() {
         eyebrow="Administration"
         title="Users & roles"
         description="Role decides which app a person sees and which fields reach their browser — rules AC-02 and AC-03."
+        actions={<button type="button" onClick={() => setInviting(true)} className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground">Invite user</button>}
       />
+      {inviting && <InviteUserPanel onClose={() => setInviting(false)} />}
       <ResponsiveTable data={users} columns={columns} keyOf={(u) => u.uid} minWidth="min-w-[760px]" />
 
       <DataStatus className="mt-4" />
 
-      <p className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-        Creating new logins needs Firebase Auth — role is mirrored into a custom claim on
-        the ID token, and security rules read the claim, never the Firestore document.
-        A role that can be edited client-side is not a role.
-      </p>
+      <p className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">Invites create a Firebase account and its protected role profile. Mobile users sign in with OTP after their mobile number is added.</p>
     </>
   );
+}
+
+function InviteUserPanel({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [phoneNumber, setPhoneNumber] = useState(""); const [role, setRole] = useState<AppUser["role"]>("INSTALLATION"); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [done, setDone] = useState<string | null>(null);
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); setError(null); if (!functions) { setError("Firebase Functions is not configured in this build."); return; } setBusy(true); try { const invite = httpsCallable(functions, "provisionWorkspaceUser"); const response = await invite({ name, email: email || undefined, phoneNumber: phoneNumber || undefined, role }); const result = response.data as { email?: string | null; phoneNumber?: string | null }; setDone(`Account ready for ${result.phoneNumber || result.email || name}. They can now use the selected login method.`); } catch (err) { setError(err instanceof Error ? err.message : "Could not create the Firebase account."); } finally { setBusy(false); } };
+  return <section className="mb-5 rounded-2xl border-2 border-primary/25 bg-card p-5"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Firebase invite</p><h2 className="mt-1 text-xl font-extrabold">Add a workspace user</h2></div><button type="button" onClick={onClose} className="rounded-xl border px-3 py-2 text-sm font-bold">Close</button></div>{done ? <div className="mt-4 rounded-xl bg-primary/10 p-4 text-sm font-bold text-primary">{done}</div> : <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-2"><input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><select value={role} onChange={(e) => setRole(e.target.value as AppUser["role"])} className="min-h-11 rounded-xl border bg-background px-3 text-sm font-bold">{["ADMIN", "ACCOUNTS", "INSTALLATION", "CLIENT", "VENDOR", "SUPER_ADMIN"].map((value) => <option key={value}>{value.replaceAll("_", " ")}</option>)}</select><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address (optional for OTP)" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Mobile: +919876543210" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><p className="sm:col-span-2 text-xs text-muted-foreground">Add at least an email or an E.164 mobile number. Mobile login uses OTP; email accounts need their password set through Firebase Auth.</p>{error && <p className="sm:col-span-2 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}<button disabled={busy || (!email && !phoneNumber)} className="sm:col-span-2 min-h-11 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-40">{busy ? "Creating account…" : "Create Firebase account"}</button></form>}</section>;
 }

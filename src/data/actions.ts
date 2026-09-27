@@ -111,7 +111,7 @@ export interface NewProjectInput {
   dlpMonths: number;
   kitId?: string;
   boqMode?: "STANDARD" | "MODULAR";
-  payment?: { amount: number; reference: string; proofName?: string };
+  payment?: { amount: number; reference: string; proofName?: string; proofUrl?: string };
   /** productId → quantity, edited by Admin before saving. 0 drops the line. */
   quantities: Record<string, number>;
 }
@@ -248,7 +248,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     const percentage = project.totals.value > 0 ? Math.round((input.payment.amount / project.totals.value) * 10000) / 100 : 0;
     project.initialPayment = {
       amount: Math.round(input.payment.amount), percentage,
-      reference: input.payment.reference.trim(), proofName: input.payment.proofName,
+      reference: input.payment.reference.trim(), proofName: input.payment.proofName, proofUrl: input.payment.proofUrl,
       submittedAt: now(), status: "PENDING_VERIFICATION",
     };
     project.advanceRequiredPct = 100;

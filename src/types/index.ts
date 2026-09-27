@@ -216,6 +216,8 @@ export interface Project {
     percentage: number;
     reference: string;
     proofName?: string;
+    /** Firebase Storage URL for the payment proof, when one was uploaded. */
+    proofUrl?: string;
     submittedAt: string;
     status: "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
     verifiedAt?: string;
