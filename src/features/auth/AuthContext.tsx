@@ -21,6 +21,19 @@ const AuthContext = createContext<AuthState | null>(null);
 
 const STORAGE_KEY = "kurchi.session";
 
+/**
+ * Temporary presentation mode. The app opens as Kurchi Admin without asking
+ * for credentials; role switching in the top bar remains available for demos.
+ * Set this to false before inviting real users or enabling production access.
+ */
+export const AUTH_BYPASS_ENABLED = true;
+
+function defaultDemoUser(): AppUser {
+  const admin = repo.users().find((candidate) => candidate.role === "ADMIN");
+  if (!admin) throw new Error("The temporary Admin demo user is missing.");
+  return admin;
+}
+
 /** Where each role lands after signing in. */
 export const HOME_ROUTE: Record<Role, string> = {
   SUPER_ADMIN: "/hq",
@@ -36,6 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (AUTH_BYPASS_ENABLED) {
+      persist(defaultDemoUser());
+      setLoading(false);
+      return;
+    }
     if (auth) {
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         if (!firebaseUser) return;
@@ -79,6 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       async signIn(email: string, password: string) {
+        if (AUTH_BYPASS_ENABLED) {
+          const preview = repo.userByEmail(email) ?? defaultDemoUser();
+          persist(preview);
+          return preview;
+        }
         if (auth && isFirebaseConfigured) {
           try {
             const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -105,9 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return found;
       },
       async sendOtp(phone, recaptchaContainerId) {
+        if (AUTH_BYPASS_ENABLED) throw new Error("Sign-in is temporarily disabled for this demo.");
         await sendPhoneOtp(phone, recaptchaContainerId);
       },
       async confirmOtp(code) {
+        if (AUTH_BYPASS_ENABLED) throw new Error("Sign-in is temporarily disabled for this demo.");
         const credential = await confirmPhoneOtp(code);
         const profile = await firebaseProfile(credential.user.uid, credential.user.email ?? undefined);
         if (!profile) {
@@ -118,6 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return profile;
       },
       signOut() {
+        if (AUTH_BYPASS_ENABLED) {
+          persist(defaultDemoUser());
+          return;
+        }
         clearPhoneOtp();
         if (auth) void firebaseSignOut(auth);
         persist(null);
