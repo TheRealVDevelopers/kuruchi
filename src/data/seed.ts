@@ -19,12 +19,12 @@ export const NOW = new Date();
  * use real Firebase email sign-in after Email/Password is enabled in Console.
  */
 export const USERS: AppUser[] = [
-  { uid: "demo-admin", email: "admin@kuruchi.com", name: "Kurchi Admin", role: "ADMIN", active: true },
-  { uid: "demo-super-admin", email: "superadmin@kuruchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN", active: true },
-  { uid: "demo-installation", email: "installation@kuruchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team", active: true },
-  { uid: "demo-accounts", email: "accounts@kuruchi.com", name: "Accounts Team", role: "ACCOUNTS", active: true },
-  { uid: "demo-ola", email: "ola@kuruchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola", active: true },
-  { uid: "demo-franchisee", email: "franchisee@kuruchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee", active: true },
+  { uid: "demo-admin", email: "admin@kurchi.com", name: "Kurchi Admin", role: "ADMIN", active: true },
+  { uid: "demo-super-admin", email: "superadmin@kurchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN", active: true },
+  { uid: "demo-installation", email: "installation@kurchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team", active: true },
+  { uid: "demo-accounts", email: "accounts@kurchi.com", name: "Accounts Team", role: "ACCOUNTS", active: true },
+  { uid: "demo-ola", email: "ola@kurchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola", active: true },
+  { uid: "demo-franchisee", email: "franchisee@kurchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee", active: true },
 ];
 
 export const CATEGORIES: string[] = [];

@@ -148,20 +148,46 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
  * accounts below are the only records it can create. Once any workspace
  * profile exists, this endpoint closes itself permanently.
  */
-exports.bootstrapDemoUsers = onCall(async () => {
+exports.bootstrapDemoUsers = onCall(async (request) => {
   const firestore = getFirestore();
+  if (request.data?.action === "rename-demo-domains") {
+    requireAdmin(request);
+    const changes = [
+      ["admin@kuruchi.com", "admin@kurchi.com"],
+      ["superadmin@kuruchi.com", "superadmin@kurchi.com"],
+      ["installation@kuruchi.com", "installation@kurchi.com"],
+      ["accounts@kuruchi.com", "accounts@kurchi.com"],
+      ["ola@kuruchi.com", "ola@kurchi.com"],
+      ["franchisee@kuruchi.com", "franchisee@kurchi.com"],
+    ];
+    const auth = getAuth();
+    const updated = [];
+    for (const [oldEmail, newEmail] of changes) {
+      let user;
+      try {
+        user = await auth.getUserByEmail(oldEmail);
+      } catch (error) {
+        if (error.code === "auth/user-not-found") continue;
+        throw error;
+      }
+      await auth.updateUser(user.uid, { email: newEmail, emailVerified: false });
+      await firestore.collection("workspaceProfiles").doc(user.uid).set({ email: newEmail }, { merge: true });
+      updated.push(newEmail);
+    }
+    return { updated };
+  }
   const existing = await firestore.collection("workspaceProfiles").limit(1).get();
   if (!existing.empty) {
     throw new HttpsError("failed-precondition", "The workspace has already been initialised.");
   }
 
   const accounts = [
-    { email: "admin@kuruchi.com", name: "Kurchi Admin", role: "ADMIN" },
-    { email: "superadmin@kuruchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN" },
-    { email: "installation@kuruchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team" },
-    { email: "accounts@kuruchi.com", name: "Accounts Team", role: "ACCOUNTS" },
-    { email: "ola@kuruchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola" },
-    { email: "franchisee@kuruchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee" },
+    { email: "admin@kurchi.com", name: "Kurchi Admin", role: "ADMIN" },
+    { email: "superadmin@kurchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN" },
+    { email: "installation@kurchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team" },
+    { email: "accounts@kurchi.com", name: "Accounts Team", role: "ACCOUNTS" },
+    { email: "ola@kurchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola" },
+    { email: "franchisee@kurchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee" },
   ];
 
   const auth = getAuth();
@@ -192,6 +218,34 @@ exports.bootstrapDemoUsers = onCall(async () => {
   }
   logger.info("Training workspace demo accounts initialised.", { count: created.length });
   return { created };
+});
+
+/** Corrects the initial training-address typo without recreating any accounts. */
+exports.renameDemoAccountDomains = onCall(async (request) => {
+  requireAdmin(request);
+  const changes = [
+    ["admin@kuruchi.com", "admin@kurchi.com"],
+    ["superadmin@kuruchi.com", "superadmin@kurchi.com"],
+    ["installation@kuruchi.com", "installation@kurchi.com"],
+    ["accounts@kuruchi.com", "accounts@kurchi.com"],
+    ["ola@kuruchi.com", "ola@kurchi.com"],
+    ["franchisee@kuruchi.com", "franchisee@kurchi.com"],
+  ];
+  const auth = getAuth();
+  const updated = [];
+  for (const [oldEmail, newEmail] of changes) {
+    let user;
+    try {
+      user = await auth.getUserByEmail(oldEmail);
+    } catch (error) {
+      if (error.code === "auth/user-not-found") continue;
+      throw error;
+    }
+    await auth.updateUser(user.uid, { email: newEmail, emailVerified: false });
+    await getFirestore().collection("workspaceProfiles").doc(user.uid).set({ email: newEmail }, { merge: true });
+    updated.push(newEmail);
+  }
+  return { updated };
 });
 
 /** Returns the signed-in user's safe workspace profile after email or OTP login. */
