@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { FilePlus2, ReceiptText, ShieldCheck, Truck, WalletCards } from "lucide-react";
+import { FilePlus2, ShieldCheck, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo, receivablesAgeing, retentionQueue, NOW } from "@/data/repo";
 import { useDb } from "@/data/store";
@@ -43,9 +43,9 @@ export function AccountsDashboard() {
       />
 
       <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <QuickAction to="/accounts/invoices" title="Create invoice" hint="GST tax invoice" Icon={FilePlus2} tone="primary" />
+        <QuickAction to="/accounts/invoices" title="Invoice register" hint="All issued GST invoices" Icon={FilePlus2} tone="primary" />
         <QuickAction to="/accounts/controls?tab=bills" title="Add vendor bill" hint="Supplier invoice" Icon={WalletCards} />
-        <QuickAction to="/accounts/challans" title="Create challan" hint="For dispatch" Icon={ReceiptText} />
+        <QuickAction to="/accounts/invoices" title="Create invoice" hint="For a showroom" Icon={FilePlus2} />
         <QuickAction to="/accounts/eway" title="E-way bill" hint="Vehicle & transport" Icon={Truck} />
       </section>
 
