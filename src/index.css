@@ -33,7 +33,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 19% 14%;
 
-    --primary: 160 53% 29%;
+    --primary: 350 80% 50%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 40 18% 94%;
@@ -42,8 +42,8 @@
     --muted: 40 18% 94%;
     --muted-foreground: 220 9% 42%;
 
-    --accent: 157 35% 92%;
-    --accent-foreground: 160 53% 25%;
+    --accent: 350 75% 95%;
+    --accent-foreground: 350 70% 36%;
 
     --destructive: 0 65% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -52,13 +52,13 @@
     --border: 35 13% 85%;
     --grid: 35 13% 90%;
     --input: 35 13% 78%;
-    --ring: 160 53% 29%;
+    --ring: 350 80% 50%;
 
-    --rail: 160 22% 12%;
+    --rail: 350 32% 13%;
     --rail-foreground: 40 23% 97%;
-    --rail-muted: 155 12% 65%;
-    --rail-hover: 160 19% 18%;
-    --rail-border: 160 16% 22%;
+    --rail-muted: 350 14% 72%;
+    --rail-hover: 350 27% 19%;
+    --rail-border: 350 21% 24%;
 
     --radius: 1rem;
 
@@ -71,42 +71,42 @@
   }
 
   .dark {
-    --background: 160 16% 8%;
+    --background: 350 15% 8%;
     --foreground: 40 23% 96%;
 
-    --card: 160 13% 12%;
+    --card: 350 12% 12%;
     --card-foreground: 40 23% 96%;
 
-    --sunken: 160 11% 16%;
+    --sunken: 350 10% 16%;
 
-    --popover: 160 13% 12%;
+    --popover: 350 12% 12%;
     --popover-foreground: 40 23% 96%;
 
-    --primary: 154 57% 52%;
-    --primary-foreground: 160 16% 8%;
+    --primary: 350 85% 60%;
+    --primary-foreground: 350 15% 8%;
 
-    --secondary: 160 10% 19%;
+    --secondary: 350 10% 19%;
     --secondary-foreground: 40 23% 96%;
 
-    --muted: 160 10% 18%;
-    --muted-foreground: 155 9% 65%;
+    --muted: 350 10% 18%;
+    --muted-foreground: 350 9% 65%;
 
-    --accent: 155 26% 20%;
-    --accent-foreground: 154 57% 70%;
+    --accent: 350 26% 20%;
+    --accent-foreground: 350 85% 72%;
 
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 160 9% 24%;
-    --grid: 160 9% 19%;
-    --input: 160 9% 27%;
-    --ring: 154 57% 52%;
+    --border: 350 9% 24%;
+    --grid: 350 9% 19%;
+    --input: 350 9% 27%;
+    --ring: 350 85% 60%;
 
-    --rail: 160 19% 7%;
+    --rail: 350 19% 7%;
     --rail-foreground: 40 23% 96%;
-    --rail-muted: 155 9% 57%;
-    --rail-hover: 160 14% 14%;
-    --rail-border: 160 10% 18%;
+    --rail-muted: 350 9% 57%;
+    --rail-hover: 350 14% 14%;
+    --rail-border: 350 10% 18%;
   }
 
   .light {
@@ -117,23 +117,23 @@
     --sunken: 35 20% 93%;
     --popover: 0 0% 100%;
     --popover-foreground: 220 18% 13%;
-    --primary: 160 53% 29%;
+    --primary: 350 80% 50%;
     --primary-foreground: 0 0% 100%;
     --secondary: 40 18% 94%;
     --secondary-foreground: 220 18% 13%;
     --muted: 40 18% 94%;
     --muted-foreground: 220 9% 43%;
-    --accent: 157 35% 92%;
-    --accent-foreground: 160 53% 25%;
+    --accent: 350 75% 95%;
+    --accent-foreground: 350 70% 36%;
     --border: 35 13% 85%;
     --grid: 35 13% 90%;
     --input: 35 13% 78%;
-    --ring: 160 53% 29%;
-    --rail: 160 22% 12%;
+    --ring: 350 80% 50%;
+    --rail: 350 32% 13%;
     --rail-foreground: 40 23% 97%;
-    --rail-muted: 155 12% 65%;
-    --rail-hover: 160 19% 18%;
-    --rail-border: 160 16% 22%;
+    --rail-muted: 350 14% 72%;
+    --rail-hover: 350 27% 19%;
+    --rail-border: 350 21% 24%;
   }
 }
 
@@ -146,10 +146,10 @@
     @apply bg-background text-foreground;
     font-size: 0.9375rem;
     -webkit-font-smoothing: antialiased;
-    background-image: radial-gradient(circle at 100% 0%, hsl(154 45% 45% / .08), transparent 30rem);
+    background-image: radial-gradient(circle at 100% 0%, hsl(350 80% 50% / .09), transparent 30rem);
   }
 
-  html { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  html { font-family: Nunito, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 
   code, kbd, samp, pre,
   input, select, textarea, button,

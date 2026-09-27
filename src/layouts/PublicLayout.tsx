@@ -14,12 +14,8 @@ export default function PublicLayout() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-[4.5rem] max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary font-mono text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20">
-              K
-            </span>
-            {/* Same gradient wordmark the ecommerce header uses. */}
-            <span className="kurchi-wordmark text-xl tracking-tight">KURCHI</span>
+          <Link to="/" className="flex items-center">
+            <img src="/images/kurchi-logo.png" alt="Kurchi — Irresistably Yours" className="h-10 w-auto object-contain" />
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex">

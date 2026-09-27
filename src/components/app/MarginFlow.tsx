@@ -16,7 +16,7 @@ const SEGMENTS = [
   { key: "freight", label: "Freight", fill: "bg-amber-400", note: "transport allocated to the line" },
   { key: "install", label: "Installation", fill: "bg-sky-400", note: "crew cost allocated to the line" },
   { key: "rework", label: "Rework", fill: "bg-primary", note: "damage, replacement, repair" },
-  { key: "margin", label: "Real margin", fill: "bg-emerald-500", note: "what Kurchi actually kept" },
+  { key: "margin", label: "Real margin", fill: "bg-red-500", note: "what Kurchi actually kept" },
 ] as const;
 
 export function MarginFlow({ money, className }: { money: LineMoney; className?: string }) {
@@ -46,7 +46,7 @@ export function MarginFlow({ money, className }: { money: LineMoney; className?:
             <span className="text-lg font-bold tabular-nums text-muted-foreground line-through decoration-2">
               {quotedPct.toFixed(1)}%
             </span>
-            <span className="text-2xl font-extrabold tabular-nums text-emerald-700">
+            <span className="text-2xl font-extrabold tabular-nums text-red-700">
               {realPct.toFixed(1)}%
             </span>
           </p>

@@ -78,7 +78,7 @@ const NAV: Record<Role, NavItem[]> = {
 const ROLE_META: Record<Role, { label: string; accent: string; note: string }> = {
   SUPER_ADMIN: { label: "Super Admin", accent: "bg-indigo-600", note: "View and comment only" },
   ADMIN: { label: "Admin", accent: "bg-primary", note: "Operations" },
-  INSTALLATION: { label: "Installation", accent: "bg-emerald-700", note: "Site team" },
+  INSTALLATION: { label: "Installation", accent: "bg-red-700", note: "Site team" },
   ACCOUNTS: { label: "Accounts", accent: "bg-amber-700", note: "GST & billing" },
   CLIENT: { label: "Ola", accent: "bg-teal-700", note: "Franchisee rollout" },
   VENDOR: { label: "Franchisee", accent: "bg-violet-700", note: "Showroom partner" },
@@ -142,9 +142,7 @@ export default function RoleLayout() {
 
   const brand = (
     <div className="flex h-[4.75rem] shrink-0 items-center gap-2.5 border-b border-rail-border px-5">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary text-sm font-black text-primary-foreground shadow-lg shadow-primary/20">
-        K
-      </span>
+      <img src="/images/kurchi-logo.png" alt="Kurchi" className="h-9 w-auto max-w-[6.5rem] shrink-0 rounded-lg object-contain" />
       <div className="min-w-0">
           <p className="truncate text-sm font-extrabold leading-tight text-rail-foreground">Kurchi</p>
           <p className="truncate text-[11px] font-medium text-rail-muted">{meta.label} workspace</p>
@@ -198,10 +196,8 @@ export default function RoleLayout() {
           </Sheet>
 
           <Link to={ROLE_HOME[user.role]} className="flex min-w-0 items-center gap-2">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-sm font-black text-primary-foreground">
-              K
-            </span>
-            <span className="truncate text-sm font-extrabold">Kurchi <span className="hidden text-muted-foreground sm:inline">/ {meta.label}</span></span>
+            <img src="/images/kurchi-logo.png" alt="Kurchi" className="h-8 w-auto max-w-[5.5rem] shrink-0 rounded-md object-contain" />
+            <span className="truncate text-sm font-extrabold"><span className="hidden text-muted-foreground sm:inline">{meta.label} workspace</span></span>
           </Link>
 
           <nav className="ml-5 hidden items-center gap-1 lg:flex">

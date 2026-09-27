@@ -178,12 +178,12 @@ export default function ProjectDetailPage() {
                         }
                         className={cn(
                           "flex w-full items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm transition-colors",
-                          ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50",
+                          ok ? "border-red-200 bg-red-50" : "border-red-200 bg-red-50",
                           !readOnly && "hover:opacity-80"
                         )}
                       >
                         {ok ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-red-600" />
                         ) : (
                           <Circle className="h-4 w-4 shrink-0 text-red-500" />
                         )}
@@ -333,7 +333,7 @@ export default function ProjectDetailPage() {
                       </span>
                       <span className={cn(
                         "inline-flex items-center gap-1 text-xs",
-                        cr.photos.length ? "text-emerald-700" : "font-semibold text-red-700"
+                        cr.photos.length ? "text-red-700" : "font-semibold text-red-700"
                       )}>
                         <Camera className="h-3.5 w-3.5" />
                         {cr.photos.length} photo{cr.photos.length === 1 ? "" : "s"}
@@ -423,7 +423,7 @@ export default function ProjectDetailPage() {
                     <span className={cn(
                       "shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold",
                       t.status === "RESOLVED"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        ? "border-red-200 bg-red-50 text-red-700"
                         : "border-amber-300 bg-amber-50 text-amber-800"
                     )}>
                       {t.status.replace(/_/g, " ").toLowerCase()}
@@ -509,7 +509,7 @@ export default function ProjectDetailPage() {
               </button>
             </RuleGate>
             {repo.handoverSigned(project.id) && (
-              <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+              <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
                 Signed by {repo.handoverSigned(project.id)!.by} on{" "}
                 {formatDate(repo.handoverSigned(project.id)!.at, { day: "numeric", month: "long", year: "numeric" })}.
               </p>

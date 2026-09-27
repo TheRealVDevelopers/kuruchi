@@ -33,7 +33,7 @@ export function BigButton({
         "flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 text-base font-bold transition-colors active:scale-[0.99] disabled:opacity-40",
         tone === "default" && "border-border bg-card hover:bg-muted",
         tone === "primary" && "border-primary bg-primary text-primary-foreground",
-        tone === "good" && "border-emerald-600 bg-emerald-600 text-white",
+        tone === "good" && "border-red-600 bg-red-600 text-white",
         tone === "stop" && "border-primary bg-card text-primary"
       )}
     >
@@ -74,7 +74,7 @@ export function ReceiveChoice({
               TAP,
               "flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 text-xs font-bold leading-tight transition-colors",
               !active && "border-border bg-card text-muted-foreground",
-              active && o.tone === "emerald" && "border-emerald-600 bg-emerald-50 text-emerald-800",
+              active && o.tone === "emerald" && "border-red-600 bg-red-50 text-red-800",
               active && o.tone === "amber" && "border-amber-500 bg-amber-50 text-amber-900",
               active && o.tone === "red" && "border-primary bg-primary/5 text-primary"
             )}

@@ -102,7 +102,7 @@ export function HqPeoplePage() {
       cell: (v) => v.scorecard ? (
         <span className={cn(
           "rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums",
-          v.scorecard.onTimePct >= 90 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          v.scorecard.onTimePct >= 90 ? "border-red-200 bg-red-50 text-red-700"
             : v.scorecard.onTimePct >= 80 ? "border-amber-300 bg-amber-50 text-amber-800"
             : "border-red-200 bg-red-50 text-red-700"
         )}>{v.scorecard.onTimePct}%</span>

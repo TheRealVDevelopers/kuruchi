@@ -52,7 +52,7 @@ export function MarginPill({ pct, className }: { pct: number; className?: string
   const tone =
     pct < 0 ? "bg-red-50 text-red-700 border-red-200"
       : pct < 15 ? "bg-amber-50 text-amber-800 border-amber-300"
-      : "bg-emerald-50 text-emerald-700 border-emerald-200";
+      : "bg-red-50 text-red-700 border-red-200";
   return (
     <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums", tone, className)}>
       {pct.toFixed(1)}%

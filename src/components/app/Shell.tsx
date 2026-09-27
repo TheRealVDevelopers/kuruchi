@@ -50,7 +50,7 @@ export function StatCard({
     <div
       className={cn(
         "rounded-2xl border bg-card px-4 py-4 shadow-sm",
-        tone === "good" && "bg-emerald-50/50",
+        tone === "good" && "bg-red-50/50",
         tone === "warn" && "bg-amber-50/60",
         tone === "bad" && "bg-red-50/50"
       )}
@@ -59,7 +59,7 @@ export function StatCard({
       <p
         className={cn(
           "figure mt-1",
-          tone === "good" && "text-emerald-700",
+          tone === "good" && "text-red-700",
           tone === "warn" && "text-amber-700",
           tone === "bad" && "text-primary"
         )}
@@ -139,7 +139,7 @@ export function StageTracker({ current, progress }: { current: Stage; progress: 
               <span
                 className={cn(
                   "inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-[11px] font-bold",
-                  done && "border-emerald-300 bg-emerald-50 text-emerald-800",
+                  done && "border-red-300 bg-red-50 text-red-800",
                   active && "border-primary bg-primary text-primary-foreground",
                   !done && !active && "border-dashed text-muted-foreground"
                 )}

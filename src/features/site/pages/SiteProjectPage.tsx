@@ -7,6 +7,7 @@ import { useDb } from "@/data/store";
 import * as act from "@/data/actions";
 import { useAction, formatDate } from "@/lib/useAction";
 import { EmptyState } from "@/components/app/Shell";
+import { BoqItemBoard } from "@/components/app/BoqItemBoard";
 import { RuleGate } from "@/components/app/RuleGate";
 import {
   BigButton, OfflineBanner, PhotoCapture, ReceiveChoice,
@@ -151,6 +152,10 @@ export default function SiteProjectPage() {
         )}
       />
 
+      <div className="mb-5">
+        <BoqItemBoard items={items} title="Every item on this site" />
+      </div>
+
       {/* Big, plain-language work choices — designed for a phone, not a spreadsheet. */}
       <nav className="mb-5 grid grid-cols-2 gap-2.5">
         {TABS.map((t) => {
@@ -248,12 +253,12 @@ export default function SiteProjectPage() {
                 key={item.id}
                 className={cn(
                   "relative overflow-hidden rounded-2xl border-2 bg-card p-4",
-                  done && "border-emerald-200 bg-emerald-50/40",
+                  done && "border-red-200 bg-red-50/40",
                   isBlocked && "border-primary/30 bg-primary/5"
                 )}
               >
                 <div className="flex items-start gap-3">
-                  <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold", done ? "bg-emerald-600 text-white" : isBlocked ? "bg-primary/15 text-primary" : "bg-primary/10 text-primary")}>
+                  <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold", done ? "bg-red-600 text-white" : isBlocked ? "bg-primary/15 text-primary" : "bg-primary/10 text-primary")}>
                     {done ? <Check className="h-6 w-6" /> : item.name.slice(0, 1).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -300,9 +305,9 @@ export default function SiteProjectPage() {
             );
           })}
 
-          {itemsToWork.length === 0 && <div className="col-span-full rounded-2xl border border-emerald-300 bg-emerald-50 p-5 text-center text-emerald-900"><CheckCircle2 className="mx-auto h-8 w-8"/><p className="mt-2 font-extrabold">All items are fitted</p><p className="mt-1 text-sm">You are ready to check issues and request handover.</p></div>}
+          {itemsToWork.length === 0 && <div className="col-span-full rounded-2xl border border-red-300 bg-red-50 p-5 text-center text-red-900"><CheckCircle2 className="mx-auto h-8 w-8"/><p className="mt-2 font-extrabold">All items are fitted</p><p className="mt-1 text-sm">You are ready to check issues and request handover.</p></div>}
 
-          {completedItems.length > 0 && <section className="col-span-full rounded-2xl border bg-card p-3"><button type="button" onClick={() => setShowCompleted((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left"><span className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700"><CheckCircle2 className="h-5 w-5"/>{completedItems.length} item{completedItems.length === 1 ? "" : "s"} already fitted</span><span className="text-xs font-bold text-muted-foreground">{showCompleted ? "Hide" : "View"}</span></button>{showCompleted && <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2">{completedItems.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900"><Check className="h-4 w-4 shrink-0"/><span className="truncate font-semibold">{item.name}</span></div>)}</div>}</section>}
+          {completedItems.length > 0 && <section className="col-span-full rounded-2xl border bg-card p-3"><button type="button" onClick={() => setShowCompleted((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left"><span className="inline-flex items-center gap-2 text-sm font-bold text-red-700"><CheckCircle2 className="h-5 w-5"/>{completedItems.length} item{completedItems.length === 1 ? "" : "s"} already fitted</span><span className="text-xs font-bold text-muted-foreground">{showCompleted ? "Hide" : "View"}</span></button>{showCompleted && <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2">{completedItems.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-900"><Check className="h-4 w-4 shrink-0"/><span className="truncate font-semibold">{item.name}</span></div>)}</div>}</section>}
 
           <div className="col-span-full"><DailyProgress onSubmit={(note, photos) => run(() => act.addProgressLog(user, project.id, note, photos), "Update posted")} /></div>
         </div>
@@ -343,7 +348,7 @@ export default function SiteProjectPage() {
                   </BigButton>
                 </div>
               ) : (
-                <p className="mt-2 text-xs font-bold text-emerald-700">
+                <p className="mt-2 text-xs font-bold text-red-700">
                   Closed {formatDate(s.closedAt)}
                 </p>
               )}
@@ -381,7 +386,7 @@ export default function SiteProjectPage() {
                   </p>
                   <p className="mt-1.5 text-sm font-bold">
                     {c.deliveredAt ? (
-                      <span className="text-emerald-700">Delivered {formatDate(c.deliveredAt)}</span>
+                      <span className="text-red-700">Delivered {formatDate(c.deliveredAt)}</span>
                     ) : c.eta ? `Arriving ${formatDate(c.eta)}` : (
                       <span className="text-muted-foreground">Not dispatched yet</span>
                     )}
@@ -452,10 +457,10 @@ function CrateCard({
 
   if (receivedAt) {
     return (
-      <article className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4">
+      <article className="rounded-xl border-2 border-red-200 bg-red-50/50 p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="font-bold">{code}</p>
-          <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-700">
+          <span className="inline-flex items-center gap-1 text-sm font-bold text-red-700">
             <Check className="h-4 w-4" /> Checked in {formatDate(receivedAt)}
           </span>
         </div>

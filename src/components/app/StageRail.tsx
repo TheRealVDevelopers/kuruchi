@@ -18,7 +18,7 @@ const STAGE_FILL: Record<Stage, string> = {
   DISPATCH: "bg-orange-400",
   AT_SITE: "bg-sky-400",
   INSTALLATION: "bg-indigo-400",
-  COMPLETE: "bg-emerald-500",
+  COMPLETE: "bg-red-500",
 };
 
 const STAGE_DOT: Record<Stage, string> = {
@@ -27,7 +27,7 @@ const STAGE_DOT: Record<Stage, string> = {
   DISPATCH: "bg-orange-500",
   AT_SITE: "bg-sky-500",
   INSTALLATION: "bg-indigo-500",
-  COMPLETE: "bg-emerald-600",
+  COMPLETE: "bg-red-600",
 };
 
 export function stageCounts(statuses: ItemStatus[]): Record<Stage, number> {

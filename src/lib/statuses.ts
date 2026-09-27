@@ -226,7 +226,7 @@ export const TONE_CLASS: Record<Tone, string> = {
   production: "bg-orange-50 text-orange-700 border-orange-200",
   logistics: "bg-amber-50 text-amber-800 border-amber-200",
   site: "bg-sky-50 text-sky-700 border-sky-200",
-  done: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  done: "bg-red-50 text-red-700 border-red-200",
   warn: "bg-yellow-50 text-yellow-800 border-yellow-300",
   stop: "bg-red-50 text-red-700 border-red-200",
 };

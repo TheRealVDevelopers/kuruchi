@@ -30,7 +30,7 @@ export default function MyShowroomsPage() {
               {pendingReview ? <p className="mt-4 text-sm font-bold text-amber-700">Payment is with Accounts for verification</p> : pendingAdmin ? <p className="mt-4 text-sm font-bold text-primary">Payment verified — Kurchi will now start the showroom</p> : <div><p className="mt-4 text-sm font-bold">{LABEL[status]}</p><div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">{progress}% through the showroom journey</p></div>}
             </div>
             <div className="rounded-2xl bg-muted/55 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Advance</p><p className="mt-2 text-xl font-extrabold">{project.advanceReceivedPct ?? 0}%</p><p className="mt-1 text-xs text-muted-foreground">of {project.advanceRequiredPct ?? 0}% planned</p></div>
-            <div className="flex items-center justify-between gap-3 md:flex-col md:items-end"><span className="text-sm font-bold text-primary">Open</span>{status === "COMPLETED" && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}<ArrowRight className="h-5 w-5 text-muted-foreground transition group-hover:translate-x-1" /></div>
+            <div className="flex items-center justify-between gap-3 md:flex-col md:items-end"><span className="text-sm font-bold text-primary">Open</span>{status === "COMPLETED" && <CheckCircle2 className="h-5 w-5 text-red-600" />}<ArrowRight className="h-5 w-5 text-muted-foreground transition group-hover:translate-x-1" /></div>
           </Link>;
         })}
       </div>}

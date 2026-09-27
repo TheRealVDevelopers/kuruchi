@@ -41,11 +41,11 @@ export default function Contact() {
       </p>
 
       {sent ? (
-        <div className="mt-8 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+        <div className="mt-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
           <div>
-            <p className="font-medium text-emerald-900">Thanks — that's with us.</p>
-            <p className="mt-1 text-sm text-emerald-800">
+            <p className="font-medium text-red-900">Thanks — that's with us.</p>
+            <p className="mt-1 text-sm text-red-800">
               We'll call the number you left within one working day.
             </p>
           </div>

@@ -248,7 +248,7 @@ export function EwayPage() {
                   </div>
                   <span className={cn(
                     "shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold",
-                    complete ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+                    complete ? "border-red-200 bg-red-50 text-red-700" : "border-red-200 bg-red-50 text-red-700"
                   )}>
                     {complete ? "ready" : "incomplete"}
                   </span>
@@ -385,7 +385,7 @@ export function InvoicesPage() {
         return (
           <span className={cn(
             "rounded-full border px-2 py-0.5 text-xs font-semibold",
-            i.status === "PAID" ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            i.status === "PAID" ? "border-red-200 bg-red-50 text-red-700"
               : overdue ? "border-red-200 bg-red-50 text-red-700"
               : "border-amber-300 bg-amber-50 text-amber-800"
           )}>
@@ -630,7 +630,7 @@ export function RetentionPage() {
                 </div>
               </div>
               {r.daysToRelease !== null && r.daysToRelease <= 15 && (
-                <p className="mt-3 flex flex-wrap items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                <p className="mt-3 flex flex-wrap items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
                   <RuleTag id="NT-06" /> Claim this now — DLP ends {formatDate(r.releaseAt!.toISOString())}.
                 </p>
               )}

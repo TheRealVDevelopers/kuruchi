@@ -64,7 +64,7 @@ export default function MyReportsPage() {
                       <span className={cn(
                         "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
                         i <= stepIndex
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          ? "border-red-200 bg-red-50 text-red-700"
                           : "border-dashed text-muted-foreground"
                       )}>
                         {s.replace(/_/g, " ").toLowerCase()}

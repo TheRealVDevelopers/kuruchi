@@ -117,7 +117,7 @@ export default function PortalProjectPage() {
           {schedule.length === 0 ? <EmptyState title="Timeline is being prepared" hint="Kurchi will publish milestone dates here shortly." /> : schedule.map((task) => (
             <article key={task.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
               <div><p className="font-semibold">{task.title}</p><p className="mt-1 text-sm text-muted-foreground">Planned {formatDate(task.plannedStart)} – {formatDate(task.plannedEnd)}</p>{task.note && <p className="mt-1 text-sm text-muted-foreground">{task.note}</p>}</div>
-              <span className={cn("rounded-full border px-2.5 py-1 text-xs font-bold", task.status === "DONE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : task.status === "BLOCKED" ? "border-red-200 bg-red-50 text-red-700" : "bg-muted text-muted-foreground")}>{task.status.replace(/_/g, " ").toLowerCase()}</span>
+              <span className={cn("rounded-full border px-2.5 py-1 text-xs font-bold", task.status === "DONE" ? "border-red-200 bg-red-50 text-red-700" : task.status === "BLOCKED" ? "border-red-200 bg-red-50 text-red-700" : "bg-muted text-muted-foreground")}>{task.status.replace(/_/g, " ").toLowerCase()}</span>
             </article>
           ))}
         </div>
@@ -233,11 +233,11 @@ export default function PortalProjectPage() {
       {tab === "handover" && (
         <section className="rounded-lg border bg-card p-4 sm:p-5">
           {signed ? (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
-              <p className="flex items-center gap-2 font-bold text-emerald-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-4">
+              <p className="flex items-center gap-2 font-bold text-red-900">
                 <ShieldCheck className="h-5 w-5" /> Handover accepted
               </p>
-              <p className="mt-1 text-sm text-emerald-800">
+              <p className="mt-1 text-sm text-red-800">
                 Signed by {signed.by} on {formatDate(signed.at, { day: "numeric", month: "long", year: "numeric" })}.
                 {project.dlpEndDate && ` Defect liability runs to ${formatDate(project.dlpEndDate, { day: "numeric", month: "long", year: "numeric" })}.`}
               </p>
