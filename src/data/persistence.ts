@@ -21,7 +21,7 @@ const VERSION_KEY = "kurchi.db.version";
  * satisfy. A mismatch discards the save and falls back to seed rather than
  * hydrating a half-broken object.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export interface PersistenceStatus {
   available: boolean;

@@ -142,6 +142,58 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
   return { uid: user.uid, email: user.email || null, phoneNumber: user.phoneNumber || null, role: data.role };
 });
 
+/**
+ * One-time initialisation for the explicitly requested training workspace.
+ * It deliberately accepts no supplied roles, names or passwords: the fixed
+ * accounts below are the only records it can create. Once any workspace
+ * profile exists, this endpoint closes itself permanently.
+ */
+exports.bootstrapDemoUsers = onCall(async () => {
+  const firestore = getFirestore();
+  const existing = await firestore.collection("workspaceProfiles").limit(1).get();
+  if (!existing.empty) {
+    throw new HttpsError("failed-precondition", "The workspace has already been initialised.");
+  }
+
+  const accounts = [
+    { email: "admin@kuruchi.com", name: "Kurchi Admin", role: "ADMIN" },
+    { email: "superadmin@kuruchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN" },
+    { email: "installation@kuruchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team" },
+    { email: "accounts@kuruchi.com", name: "Accounts Team", role: "ACCOUNTS" },
+    { email: "ola@kuruchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola" },
+    { email: "franchisee@kuruchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee" },
+  ];
+
+  const auth = getAuth();
+  const created = [];
+  for (const account of accounts) {
+    let user;
+    try {
+      user = await auth.getUserByEmail(account.email);
+      user = await auth.updateUser(user.uid, { displayName: account.name, password: "123456", disabled: false });
+    } catch (error) {
+      if (error.code !== "auth/user-not-found") throw error;
+      user = await auth.createUser({ email: account.email, password: "123456", displayName: account.name, disabled: false });
+    }
+
+    const claims = { role: account.role, active: true, clientId: account.clientId || null, teamId: account.teamId || null };
+    await auth.setCustomUserClaims(user.uid, claims);
+    await firestore.collection("workspaceProfiles").doc(user.uid).create({
+      uid: user.uid,
+      name: account.name,
+      email: account.email,
+      role: account.role,
+      active: true,
+      ...(account.clientId ? { clientId: account.clientId } : {}),
+      ...(account.teamId ? { teamId: account.teamId } : {}),
+      bootstrappedAt: FieldValue.serverTimestamp(),
+    });
+    created.push({ email: account.email, role: account.role });
+  }
+  logger.info("Training workspace demo accounts initialised.", { count: created.length });
+  return { created };
+});
+
 /** Returns the signed-in user's safe workspace profile after email or OTP login. */
 exports.getMyWorkspaceProfile = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
