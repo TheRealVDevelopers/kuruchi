@@ -132,7 +132,12 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   if (actor.role === "CLIENT" && !input.franchisee?.name.trim()) {
     throw new RuleError("Add the franchisee owner before submitting the showroom.");
   }
-  if (actor.role === "CLIENT" && !input.kitId) throw new RuleError("Choose a BOQ before continuing.");
+  if (actor.role === "CLIENT" && input.boqMode === "STANDARD" && !input.kitId) {
+    throw new RuleError("Kurchi needs to create the Standard BOQ before continuing.");
+  }
+  if (actor.role === "CLIENT" && input.boqMode === "MODULAR" && !Object.values(input.quantities).some((qty) => qty > 0)) {
+    throw new RuleError("Set a quantity for at least one catalogue product.");
+  }
   if (actor.role === "CLIENT" && (!input.payment || input.payment.amount <= 0 || !input.payment.reference.trim())) {
     throw new RuleError("Enter the amount paid and the UTR or payment reference.");
   }
@@ -197,10 +202,15 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   db.projects.push(project);
 
   const kit = db.kits.find((k) => k.id === input.kitId);
+  const sourceLines = kit?.lines ?? (input.boqMode === "MODULAR"
+    ? db.products.filter((product) => product.active).map((product) => ({
+      productId: product.id, name: product.name, spec: product.shortSpec, defaultQty: 0, zone: "Showroom",
+    }))
+    : []);
   let lineCount = 0;
 
-  if (kit) {
-    kit.lines.forEach((line, idx) => {
+  if (sourceLines.length) {
+    sourceLines.forEach((line, idx) => {
       const qty = input.quantities[line.productId] ?? line.defaultQty;
       if (qty <= 0) return;
       const product = db.products.find((p) => p.id === line.productId);
@@ -1295,13 +1305,16 @@ export function blankKit(): Kit {
   return { id: nextId("kit"), name: "", description: "", version: 1, active: true, mode: "STANDARD", lines: [] };
 }
 
-/** A kit is a reusable Standard or Modular starting point; project BOQs copy it on use. */
+/** The one reusable Standard BOQ. Modular projects always use the full catalogue. */
 export function saveKit(actor: AppUser, kit: Kit) {
   if (!kit.name.trim()) throw new RuleError("Give this BOQ kit a name.");
   if (!kit.lines.length) throw new RuleError("Add at least one catalogue item to this BOQ kit.");
-  const cleaned = { ...kit, name: kit.name.trim(), lines: kit.lines.filter((line) => line.productId && line.defaultQty > 0) };
+  const cleaned = { ...kit, mode: "STANDARD" as const, name: kit.name.trim(), lines: kit.lines.filter((line) => line.productId && line.defaultQty > 0) };
   if (!cleaned.lines.length) throw new RuleError("Each kit line needs a product and quantity.");
   const existing = db.kits.findIndex((entry) => entry.id === kit.id);
+  if (db.kits.some((entry) => entry.id !== kit.id && entry.active && entry.mode !== "MODULAR")) {
+    throw new RuleError("Only one active Standard BOQ is allowed. Edit the existing Standard BOQ instead.");
+  }
   if (existing >= 0) db.kits[existing] = cleaned;
   else db.kits.push(cleaned);
   audit(actor, `kits/${kit.id}`, existing >= 0 ? "UPDATE" : "CREATE", `${cleaned.name} · ${cleaned.lines.length} items`);
