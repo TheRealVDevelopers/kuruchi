@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Camera, Check, CheckCircle2, CircleAlert, PackageCheck, PackageX, Phone, QrCode, Truck, Wrench } from "lucide-react";
+import { ArrowLeft, Camera, Check, CheckCircle2, CircleAlert, PackageCheck, PackageX, Phone, QrCode, Wrench } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo } from "@/data/repo";
 import { useDb } from "@/data/store";
 import * as act from "@/data/actions";
 import { useAction, formatDate } from "@/lib/useAction";
 import { EmptyState } from "@/components/app/Shell";
-import { BoqItemBoard } from "@/components/app/BoqItemBoard";
 import { RuleGate } from "@/components/app/RuleGate";
 import {
   BigButton, OfflineBanner, PhotoCapture, ReceiveChoice,
@@ -17,14 +16,13 @@ import { projectProgress } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
 import type { SiteWorkStatus, SnagSeverity, TicketCause } from "@/types";
 
-const TABS = ["receive", "install", "snags", "incoming"] as const;
+const TABS = ["receive", "install", "snags"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_META: Record<Tab, { label: string; hint: string; Icon: typeof PackageCheck }> = {
   receive: { label: "Receive", hint: "Check crates", Icon: PackageCheck },
   install: { label: "Install", hint: "Fit items", Icon: Wrench },
   snags: { label: "Issues", hint: "Report a problem", Icon: CircleAlert },
-  incoming: { label: "Delivery", hint: "See what is coming", Icon: Truck },
 };
 
 export default function SiteProjectPage() {
@@ -51,7 +49,6 @@ export default function SiteProjectPage() {
   // AC-03 — the site app never receives pricing at all.
   const items = repo.items(project.id, user.role);
   const rawItems = repo.itemsRaw(project.id);
-  const consignments = repo.consignments(project.id);
   const crates = repo.crates(project.id);
   const tickets = repo.tickets(project.id);
   const snags = repo.snags(project.id);
@@ -62,7 +59,7 @@ export default function SiteProjectPage() {
   const openSnags = snags.filter((s) => s.status === "OPEN");
   const blocked = items.filter((i) => i.status === "RECEIVED_DAMAGED" || i.status === "SHORT_SUPPLIED");
   const completedItems = items.filter((i) => i.status === "INSTALLED" || i.status === "HANDED_OVER");
-  const itemsToWork = items.filter((i) => !["INSTALLED", "HANDED_OVER"].includes(i.status));
+  const installQueue = items.filter((i) => ["RECEIVED_OK", "INSTALL_ASSIGNED", "INSTALL_IN_PROGRESS", "RECEIVED_DAMAGED", "SHORT_SUPPLIED"].includes(i.status));
 
   // One instruction, chosen by what is actually most urgent right now.
   const nextUp = (() => {
@@ -139,7 +136,7 @@ export default function SiteProjectPage() {
       </a>
 
       <div className="mb-4 flex items-center justify-between rounded-2xl border bg-card px-4 py-3">
-        <div><p className="eyebrow">Today</p><p className="mt-1 text-sm font-bold">{itemsToWork.length} item{itemsToWork.length === 1 ? "" : "s"} need attention</p></div>
+        <div><p className="eyebrow">Your work</p><p className="mt-1 text-sm font-bold">{installQueue.length} item{installQueue.length === 1 ? "" : "s"} ready to receive or fit</p></div>
         <div className="text-right"><p className="text-2xl font-extrabold text-primary">{projectProgress(rawItems.map((i) => i.status))}%</p><p className="text-xs text-muted-foreground">complete</p></div>
       </div>
 
@@ -152,9 +149,7 @@ export default function SiteProjectPage() {
         )}
       />
 
-      <div className="mb-5">
-        <BoqItemBoard items={items} title="Every item on this site" />
-      </div>
+      <section className="mb-5 rounded-2xl border bg-card p-4"><div className="flex items-center justify-between gap-3"><div><p className="eyebrow">BOQ check</p><h2 className="mt-1 font-extrabold">What this showroom needs</h2></div><span className="rounded-full bg-muted px-3 py-1.5 text-xs font-bold">{items.length} items</span></div><p className="mt-2 text-sm text-muted-foreground">Kurchi moves the items here. Your job starts only when an item reaches site: receive it, fit it, or report a problem.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{items.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/55 px-3 py-2.5"><div><p className="text-sm font-bold">{item.name} × {item.qty}</p><p className="text-xs text-muted-foreground">{item.zone || "Showroom"}</p></div><span className="text-xs font-bold text-muted-foreground">{["RECEIVED_OK", "INSTALL_ASSIGNED", "INSTALL_IN_PROGRESS", "INSTALLED", "HANDED_OVER"].includes(item.status) ? "At site" : "On the way"}</span></div>)}</div></section>
 
       {/* Big, plain-language work choices — designed for a phone, not a spreadsheet. */}
       <nav className="mb-5 grid grid-cols-2 gap-2.5">
@@ -162,8 +157,7 @@ export default function SiteProjectPage() {
           const badge =
             t === "receive" ? unreceived.length
             : t === "install" ? toInstall.length + inProgress.length
-            : t === "snags" ? openSnags.length
-            : consignments.filter((c) => !c.deliveredAt).length;
+            : openSnags.length;
           const { Icon, label, hint } = TAB_META[t];
           return (
             <button
@@ -242,7 +236,7 @@ export default function SiteProjectPage() {
       {/* ------------------------------------------------------- install */}
       {tab === "install" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          {itemsToWork.map((item) => {
+          {installQueue.map((item) => {
             const raw = rawItems.find((r) => r.id === item.id)!;
             const verdict = canMarkInstalled(raw, tickets);
             const done = item.status === "INSTALLED" || item.status === "HANDED_OVER";
@@ -305,7 +299,7 @@ export default function SiteProjectPage() {
             );
           })}
 
-          {itemsToWork.length === 0 && <div className="col-span-full rounded-2xl border border-red-300 bg-red-50 p-5 text-center text-red-900"><CheckCircle2 className="mx-auto h-8 w-8"/><p className="mt-2 font-extrabold">All items are fitted</p><p className="mt-1 text-sm">You are ready to check issues and request handover.</p></div>}
+          {installQueue.length === 0 && <div className="col-span-full rounded-2xl border border-red-300 bg-red-50 p-5 text-center text-red-900"><CheckCircle2 className="mx-auto h-8 w-8"/><p className="mt-2 font-extrabold">Nothing is ready for fitting yet</p><p className="mt-1 text-sm">Items will appear here only after they are received at site.</p></div>}
 
           {completedItems.length > 0 && <section className="col-span-full rounded-2xl border bg-card p-3"><button type="button" onClick={() => setShowCompleted((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left"><span className="inline-flex items-center gap-2 text-sm font-bold text-red-700"><CheckCircle2 className="h-5 w-5"/>{completedItems.length} item{completedItems.length === 1 ? "" : "s"} already fitted</span><span className="text-xs font-bold text-muted-foreground">{showCompleted ? "Hide" : "View"}</span></button>{showCompleted && <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2">{completedItems.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-900"><Check className="h-4 w-4 shrink-0"/><span className="truncate font-semibold">{item.name}</span></div>)}</div>}</section>}
 
@@ -370,39 +364,6 @@ export default function SiteProjectPage() {
         </div>
       )}
 
-      {/* ------------------------------------------------------ incoming */}
-      {tab === "incoming" && (
-        <div className="space-y-3">
-          {consignments.map((c) => (
-            <article key={c.id} className="rounded-xl border bg-card p-4">
-              <div className="flex items-start gap-3">
-                <Truck className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold">{c.lrNumber || "LR pending"}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {c.crateIds.length} crate{c.crateIds.length === 1 ? "" : "s"} ·{" "}
-                    {c.transporterName || "transporter TBC"}
-                    {c.vehicleNo ? ` · ${c.vehicleNo}` : ""}
-                  </p>
-                  <p className="mt-1.5 text-sm font-bold">
-                    {c.deliveredAt ? (
-                      <span className="text-red-700">Delivered {formatDate(c.deliveredAt)}</span>
-                    ) : c.eta ? `Arriving ${formatDate(c.eta)}` : (
-                      <span className="text-muted-foreground">Not dispatched yet</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-              {c.driverPhone && !c.deliveredAt && (
-                <a href={`tel:${c.driverPhone}`} className="mt-3 block">
-                  <BigButton icon={<Phone className="h-4 w-4" />}>Call the driver</BigButton>
-                </a>
-              )}
-            </article>
-          ))}
-          {consignments.length === 0 && <EmptyState title="Nothing on the way yet" />}
-        </div>
-      )}
     </>
   );
 }

@@ -126,6 +126,8 @@ export interface Kit {
   programmeId?: string;
   version: number;
   active: boolean;
+  /** Standard kits are fixed; Modular kits let Ola increase listed quantities. */
+  mode?: "STANDARD" | "MODULAR";
   lines: KitLine[];
 }
 

@@ -1291,6 +1291,23 @@ export function saveProduct(actor: AppUser, product: Product) {
   commit();
 }
 
+export function blankKit(): Kit {
+  return { id: nextId("kit"), name: "", description: "", version: 1, active: true, mode: "STANDARD", lines: [] };
+}
+
+/** A kit is a reusable Standard or Modular starting point; project BOQs copy it on use. */
+export function saveKit(actor: AppUser, kit: Kit) {
+  if (!kit.name.trim()) throw new RuleError("Give this BOQ kit a name.");
+  if (!kit.lines.length) throw new RuleError("Add at least one catalogue item to this BOQ kit.");
+  const cleaned = { ...kit, name: kit.name.trim(), lines: kit.lines.filter((line) => line.productId && line.defaultQty > 0) };
+  if (!cleaned.lines.length) throw new RuleError("Each kit line needs a product and quantity.");
+  const existing = db.kits.findIndex((entry) => entry.id === kit.id);
+  if (existing >= 0) db.kits[existing] = cleaned;
+  else db.kits.push(cleaned);
+  audit(actor, `kits/${kit.id}`, existing >= 0 ? "UPDATE" : "CREATE", `${cleaned.name} · ${cleaned.lines.length} items`);
+  commit();
+}
+
 export function toggleProduct(actor: AppUser, productId: string) {
   const p = db.products.find((x) => x.id === productId);
   if (!p) return;

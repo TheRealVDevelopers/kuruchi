@@ -120,6 +120,12 @@ function ProductForm({
   onSave: (p: Product) => void; onCancel: () => void;
 }) {
   const [p, setP] = useState(product);
+  const addImage = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setP((current) => ({ ...current, images: [...current.images, String(reader.result)] }));
+    reader.readAsDataURL(file);
+  };
 
   return (
     <EditPanel
@@ -156,6 +162,7 @@ function ProductForm({
           <TextArea id="p-desc" label="Description" value={p.description} onChange={(v) => setP({ ...p, description: v })}
             placeholder="Shown on the public product page." />
         </div>
+        <div className="sm:col-span-2 lg:col-span-3 rounded-xl border bg-muted/30 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold">Product photos</p><p className="mt-1 text-xs text-muted-foreground">Add clear catalogue images for BOQ selection and the public catalogue.</p></div><label className="cursor-pointer rounded-xl border bg-card px-3 py-2 text-sm font-bold hover:bg-muted">Add image<input type="file" accept="image/*" className="sr-only" onChange={(event) => { addImage(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></div>{p.images.length > 0 && <div className="mt-4 flex flex-wrap gap-3">{p.images.map((image, index) => <div key={`${image}-${index}`} className="relative"><img src={image} alt={`${p.name || "Product"} ${index + 1}`} className="h-20 w-24 rounded-xl border object-cover"/><button type="button" onClick={() => setP({ ...p, images: p.images.filter((_, imageIndex) => imageIndex !== index) })} className="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-foreground text-xs font-bold text-background" aria-label="Remove image">×</button></div>)}</div>}</div>
       </div>
 
       {p.defaultSellingPrice > 0 && p.defaultSellingPrice < p.defaultBasePrice && (
@@ -357,16 +364,23 @@ function ProgrammeForm({
 export function KitsPage() {
   useDb();
   const { user } = useAuth();
+  const run = useAction();
+  const [editing, setEditing] = useState<Kit | null>(null);
   const kits = repo.kits();
   const projects = repo.projects(user);
+  const products = repo.products().filter((product) => product.active);
+  if (!user) return null;
 
   return (
     <>
       <PageHeader
         eyebrow="Masters"
         title="BOQ kits"
-        description="Reusable showroom presets. Applying a kit is the difference between two minutes and two hours per project."
+        description="Build the Standard and Modular product sets that Ola and franchisees can choose from."
+        actions={<AddButton label="Create BOQ kit" onClick={() => setEditing(act.blankKit())} />}
       />
+
+      {editing && <KitForm kit={editing} products={products} onCancel={() => setEditing(null)} onSave={(kit) => { const ok = run(() => act.saveKit(user, kit), `${kit.name} saved`); if (ok) setEditing(null); }} />}
 
       <div className="space-y-4">
         {kits.map((kit: Kit) => {
@@ -386,19 +400,14 @@ export function KitsPage() {
                       v{kit.version}
                     </span>
                   </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{kit.description}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{kit.description}</p><span className="mt-2 inline-flex rounded-full bg-primary/10 px-2 py-1 text-xs font-bold text-primary">{kit.mode === "MODULAR" ? "Modular — quantities can increase" : "Standard — fixed quantities"}</span>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <div className="text-right">
                     <p className="font-bold tabular-nums">{formatINR(value)}</p>
                     <p className="text-xs text-muted-foreground">{kit.lines.length} lines</p>
                   </div>
-                  <Link
-                    to={`/admin/projects/new?kit=${kit.id}`}
-                    className="rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
-                  >
-                    Start a project
-                  </Link>
+                  <div className="flex gap-2"><button type="button" onClick={() => setEditing({ ...kit, lines: kit.lines.map((line) => ({ ...line })) })} className="rounded-md border px-3.5 py-2 text-sm font-semibold hover:bg-muted">Edit kit</button><Link to={`/admin/projects/new?kit=${kit.id}`} className="rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">Start a project</Link></div>
                 </div>
               </div>
 
@@ -425,6 +434,13 @@ export function KitsPage() {
       </div>
     </>
   );
+}
+
+function KitForm({ kit, products, onCancel, onSave }: { kit: Kit; products: Product[]; onCancel: () => void; onSave: (kit: Kit) => void }) {
+  const [draft, setDraft] = useState(kit);
+  const addLine = () => { const product = products[0]; if (!product) return; setDraft({ ...draft, lines: [...draft.lines, { productId: product.id, name: product.name, spec: product.shortSpec, defaultQty: 1, zone: "Showroom" }] }); };
+  const updateLine = (index: number, patch: Partial<Kit["lines"][number]>) => setDraft({ ...draft, lines: draft.lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line) });
+  return <section className="mb-6 rounded-3xl border-2 border-primary/25 bg-card p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">BOQ kit builder</p><h2 className="mt-1 text-xl font-extrabold">{kit.name || "New product set"}</h2><p className="mt-1 text-sm text-muted-foreground">Standard keeps quantities fixed. Modular lets Ola increase quantities from this product set.</p></div><button type="button" onClick={onCancel} className="rounded-xl border px-3 py-2 text-sm font-bold">Close</button></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Example: Standard Ola City Showroom" className="min-h-12 rounded-xl border bg-background px-3 text-sm font-bold"/><input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="What this BOQ set is for" className="min-h-12 rounded-xl border bg-background px-3 text-sm"/><select value={draft.mode ?? "STANDARD"} onChange={(event) => setDraft({ ...draft, mode: event.target.value as Kit["mode"] })} className="min-h-12 rounded-xl border bg-background px-3 text-sm font-bold"><option value="STANDARD">Standard BOQ</option><option value="MODULAR">Modular BOQ</option></select></div><div className="mt-5"><div className="flex items-center justify-between"><h3 className="font-extrabold">Items in this set</h3><button type="button" onClick={addLine} disabled={!products.length} className="rounded-xl border px-3 py-2 text-sm font-bold text-primary disabled:opacity-40">+ Add item</button></div><div className="mt-3 space-y-2">{draft.lines.map((line, index) => <div key={`${line.productId}-${index}`} className="grid gap-2 rounded-2xl border bg-muted/30 p-3 sm:grid-cols-[1fr_7rem_10rem_auto]"><select value={line.productId} onChange={(event) => { const product = products.find((entry) => entry.id === event.target.value); if (product) updateLine(index, { productId: product.id, name: product.name, spec: product.shortSpec }); }} className="min-h-11 rounded-xl border bg-background px-3 text-sm font-bold">{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select><input type="number" min={1} value={line.defaultQty} onChange={(event) => updateLine(index, { defaultQty: Math.max(1, Number(event.target.value) || 1) })} className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><input value={line.zone || ""} onChange={(event) => updateLine(index, { zone: event.target.value })} placeholder="Zone / area" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><button type="button" onClick={() => setDraft({ ...draft, lines: draft.lines.filter((_, lineIndex) => lineIndex !== index) })} className="min-h-11 rounded-xl border px-3 text-sm font-bold text-primary">Remove</button></div>)}</div>{draft.lines.length === 0 && <p className="mt-3 rounded-xl bg-muted p-4 text-sm text-muted-foreground">Add catalogue products to build the BOQ kit.</p>}</div><div className="mt-5 flex justify-end"><button type="button" onClick={() => onSave(draft)} className="min-h-12 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground">Save BOQ kit</button></div></section>;
 }
 
 /* --------------------------------------------------------------- vendors */
