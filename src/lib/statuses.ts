@@ -83,7 +83,9 @@ export const ITEM_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   DISPATCHED: ["IN_TRANSIT"],
   IN_TRANSIT: ["DELIVERED_AT_SITE"],
   DELIVERED_AT_SITE: ["RECEIVED_OK", "RECEIVED_DAMAGED", "SHORT_SUPPLIED"],
-  RECEIVED_OK: ["INSTALL_ASSIGNED"],
+  // The field team has one final action after receiving an item: confirm it is installed.
+  // Older intermediate installation states are retained below only for existing records.
+  RECEIVED_OK: ["INSTALLED"],
   RECEIVED_DAMAGED: ["REPLACEMENT_REQUESTED", "RECEIVED_OK"],
   SHORT_SUPPLIED: ["REPLACEMENT_REQUESTED", "RECEIVED_OK"],
   REPLACEMENT_REQUESTED: ["IN_PRODUCTION", "PO_PLACED"],

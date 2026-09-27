@@ -14,7 +14,7 @@ import {
 import { canMarkInstalled, canRaiseHandover, canSubmitTicket, defaultCause } from "@/lib/rules";
 import { projectProgress } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
-import type { SiteWorkStatus, SnagSeverity, TicketCause } from "@/types";
+import type { SnagSeverity, TicketCause } from "@/types";
 
 const TABS = ["receive", "install", "snags"] as const;
 type Tab = (typeof TABS)[number];
@@ -54,8 +54,9 @@ export default function SiteProjectPage() {
   const snags = repo.snags(project.id);
 
   const unreceived = crates.filter((c) => !c.receivedAt);
-  const toInstall = items.filter((i) => i.status === "RECEIVED_OK" || i.status === "INSTALL_ASSIGNED");
-  const inProgress = items.filter((i) => i.status === "INSTALL_IN_PROGRESS");
+  // The two old intermediate states are treated as ready so existing live work
+  // can finish through the new single-button experience.
+  const toInstall = items.filter((i) => ["RECEIVED_OK", "INSTALL_ASSIGNED", "INSTALL_IN_PROGRESS"].includes(i.status));
   const openSnags = snags.filter((s) => s.status === "OPEN");
   const blocked = items.filter((i) => i.status === "RECEIVED_DAMAGED" || i.status === "SHORT_SUPPLIED");
   const completedItems = items.filter((i) => i.status === "INSTALLED" || i.status === "HANDED_OVER");
@@ -77,19 +78,12 @@ export default function SiteProjectPage() {
       go: "install" as Tab,
       cta: "See which",
     };
-    if (inProgress.length) return {
-      eyebrow: "In progress",
-      title: `Finish ${inProgress.length} item${inProgress.length === 1 ? "" : "s"}`,
-      detail: "Mark each one installed as you go.",
-      go: "install" as Tab,
-      cta: "Open the checklist",
-    };
     if (toInstall.length) return {
-      eyebrow: "Ready to fit",
+      eyebrow: "Ready to install",
       title: `${toInstall.length} item${toInstall.length === 1 ? "" : "s"} ready to install`,
-      detail: "Everything received and clear to fit.",
+      detail: "Open the checklist and confirm each item once it is fitted.",
       go: "install" as Tab,
-      cta: "Start installing",
+      cta: "Open checklist",
     };
     if (openSnags.length) return {
       eyebrow: "Nearly there",
@@ -140,15 +134,6 @@ export default function SiteProjectPage() {
         <div className="text-right"><p className="text-2xl font-extrabold text-primary">{projectProgress(rawItems.map((i) => i.status))}%</p><p className="text-xs text-muted-foreground">complete</p></div>
       </div>
 
-      <SiteStatusCheckIn
-        value={project.siteWorkStatus ?? "NOT_STARTED"}
-        onChange={(status) => run(
-          () => act.updateSiteWorkStatus(user, project.id, status),
-          "Site update saved",
-          "Your Admin can now see the latest site situation."
-        )}
-      />
-
       <section className="mb-5 rounded-2xl border bg-card p-4"><div className="flex items-center justify-between gap-3"><div><p className="eyebrow">BOQ check</p><h2 className="mt-1 font-extrabold">What this showroom needs</h2></div><span className="rounded-full bg-muted px-3 py-1.5 text-xs font-bold">{items.length} items</span></div><p className="mt-2 text-sm text-muted-foreground">Kurchi moves the items here. Your job starts only when an item reaches site: receive it, fit it, or report a problem.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{items.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/55 px-3 py-2.5"><div><p className="text-sm font-bold">{item.name} × {item.qty}</p><p className="text-xs text-muted-foreground">{item.zone || "Showroom"}</p></div><span className="text-xs font-bold text-muted-foreground">{["RECEIVED_OK", "INSTALL_ASSIGNED", "INSTALL_IN_PROGRESS", "INSTALLED", "HANDED_OVER"].includes(item.status) ? "At site" : "On the way"}</span></div>)}</div></section>
 
       {/* Big, plain-language work choices — designed for a phone, not a spreadsheet. */}
@@ -156,7 +141,7 @@ export default function SiteProjectPage() {
         {TABS.map((t) => {
           const badge =
             t === "receive" ? unreceived.length
-            : t === "install" ? toInstall.length + inProgress.length
+            : t === "install" ? toInstall.length
             : openSnags.length;
           const { Icon, label, hint } = TAB_META[t];
           return (
@@ -239,7 +224,6 @@ export default function SiteProjectPage() {
           {installQueue.map((item) => {
             const raw = rawItems.find((r) => r.id === item.id)!;
             const verdict = canMarkInstalled(raw, tickets);
-            const done = item.status === "INSTALLED" || item.status === "HANDED_OVER";
             const isBlocked = item.status === "RECEIVED_DAMAGED" || item.status === "SHORT_SUPPLIED";
 
             return (
@@ -247,13 +231,12 @@ export default function SiteProjectPage() {
                 key={item.id}
                 className={cn(
                   "relative overflow-hidden rounded-2xl border-2 bg-card p-4",
-                  done && "border-red-200 bg-red-50/40",
                   isBlocked && "border-primary/30 bg-primary/5"
                 )}
               >
                 <div className="flex items-start gap-3">
-                  <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold", done ? "bg-red-600 text-white" : isBlocked ? "bg-primary/15 text-primary" : "bg-primary/10 text-primary")}>
-                    {done ? <Check className="h-6 w-6" /> : item.name.slice(0, 1).toUpperCase()}
+                  <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold", isBlocked ? "bg-primary/15 text-primary" : "bg-primary/10 text-primary")}>
+                    {item.name.slice(0, 1).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-bold leading-snug">{item.name}</p>
@@ -270,26 +253,16 @@ export default function SiteProjectPage() {
                   </p>
                 )}
 
-                {!done && !isBlocked && (
+                {!isBlocked && (
                   <div className="mt-3.5">
-                    {item.status === "RECEIVED_OK" && (
-                      <BigButton onClick={() => run(() => act.setItemStatus(user, item.id, "INSTALL_ASSIGNED"), "Item ready for fitting")}>
-                        Ready to fit ✓
-                      </BigButton>
-                    )}
-                    {item.status === "INSTALL_ASSIGNED" && (
-                      <BigButton onClick={() => run(() => act.setItemStatus(user, item.id, "INSTALL_IN_PROGRESS"), "Started")}>
-                        Start fitting
-                      </BigButton>
-                    )}
-                    {item.status === "INSTALL_IN_PROGRESS" && (
+                    {["RECEIVED_OK", "INSTALL_ASSIGNED", "INSTALL_IN_PROGRESS"].includes(item.status) && (
                       <RuleGate verdict={verdict}>
                         <BigButton
                           tone="good"
                           icon={<Check className="h-5 w-5" />}
-                          onClick={() => run(() => act.setItemStatus(user, item.id, "INSTALLED"), `${item.name} done`)}
+                          onClick={() => run(() => act.markItemInstalled(user, item.id), `${item.name} installed`)}
                         >
-                          Fitting complete ✓
+                          Mark installed ✓
                         </BigButton>
                       </RuleGate>
                     )}
@@ -303,7 +276,6 @@ export default function SiteProjectPage() {
 
           {completedItems.length > 0 && <section className="col-span-full rounded-2xl border bg-card p-3"><button type="button" onClick={() => setShowCompleted((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left"><span className="inline-flex items-center gap-2 text-sm font-bold text-red-700"><CheckCircle2 className="h-5 w-5"/>{completedItems.length} item{completedItems.length === 1 ? "" : "s"} already fitted</span><span className="text-xs font-bold text-muted-foreground">{showCompleted ? "Hide" : "View"}</span></button>{showCompleted && <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2">{completedItems.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-900"><Check className="h-4 w-4 shrink-0"/><span className="truncate font-semibold">{item.name}</span></div>)}</div>}</section>}
 
-          <div className="col-span-full"><DailyProgress onSubmit={(note, photos) => run(() => act.addProgressLog(user, project.id, note, photos), "Update posted")} /></div>
         </div>
       )}
 
@@ -580,81 +552,6 @@ function ReportDamage({
         </RuleGate>
 
         <BigButton onClick={() => setOpen(false)}>Cancel</BigButton>
-      </div>
-    </section>
-  );
-}
-
-function SiteStatusCheckIn({ value, onChange }: { value: SiteWorkStatus; onChange: (status: SiteWorkStatus) => void }) {
-  const choices: Array<{ value: SiteWorkStatus; label: string; hint: string }> = [
-    { value: "WORK_STARTED", label: "Started", hint: "Crew has begun" },
-    { value: "WORK_IN_PROGRESS", label: "In progress", hint: "Work is happening" },
-    { value: "WAITING", label: "Waiting", hint: "Need help or material" },
-    { value: "READY_FOR_HANDOVER", label: "Ready", hint: "Ready for handover" },
-  ];
-
-  return (
-    <section className="mb-4 rounded-2xl border bg-card p-3.5">
-      <p className="eyebrow">Quick site update</p>
-      <h2 className="mt-1 text-base font-extrabold">What is happening at site?</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">Tap one option. Your Admin will see it immediately.</p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {choices.map((choice) => {
-          const selected = value === choice.value;
-          return (
-            <button
-              key={choice.value}
-              type="button"
-              onClick={() => onChange(choice.value)}
-              aria-pressed={selected}
-              className={cn(
-                "min-h-[4.5rem] rounded-xl border-2 px-3 text-left transition-colors",
-                selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted/60"
-              )}
-            >
-              <span className="block text-sm font-extrabold">{selected && <Check className="mr-1 inline h-4 w-4" />}{choice.label}</span>
-              <span className={cn("mt-0.5 block text-[11px] font-medium", selected ? "text-primary-foreground/80" : "text-muted-foreground")}>{choice.hint}</span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function DailyProgress({ onSubmit }: { onSubmit: (note: string, photos: string[]) => boolean }) {
-  const [note, setNote] = useState("");
-  const [photos, setPhotos] = useState<string[]>([]);
-
-  return (
-    <section className="rounded-xl border bg-card p-4">
-      <h3 className="font-bold">Today's progress</h3>
-      <p className="mb-3 mt-0.5 text-sm text-muted-foreground">
-        The client sees this. One photo minimum — rule IN-02.
-      </p>
-      <textarea
-        rows={2}
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="Consultation zone complete, counter fitted."
-        aria-label="Progress note"
-        className="mb-3 w-full resize-y rounded-xl border-2 bg-background px-3 py-2.5 text-base"
-      />
-      <PhotoCapture
-        photos={photos}
-        required
-        label="Photograph the work"
-        onAdd={(photo) => setPhotos((p) => [...p, photo ?? `site-${p.length + 1}.jpg`])}
-        onRemove={(i) => setPhotos((p) => p.filter((_, x) => x !== i))}
-      />
-      <div className="mt-3">
-        <BigButton
-          tone="primary"
-          disabled={!note.trim() || !photos.length}
-          onClick={() => { if (onSubmit(note, photos)) { setNote(""); setPhotos([]); } }}
-        >
-          Post update
-        </BigButton>
       </div>
     </section>
   );

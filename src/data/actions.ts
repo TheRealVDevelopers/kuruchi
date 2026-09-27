@@ -65,7 +65,7 @@ export function setItemStatus(
   item.statusUpdatedAt = now();
 
   const project = requireProject(item.projectId);
-  if (to === "INSTALL_IN_PROGRESS" && !project.installationStartedAt) {
+  if ((to === "INSTALL_IN_PROGRESS" || to === "INSTALLED") && !project.installationStartedAt) {
     project.installationStartedAt = now();
     project.operationalStatus = "INSTALLATION";
     project.operationalStatusUpdatedAt = now();
@@ -76,6 +76,21 @@ export function setItemStatus(
   recomputeProject(item.projectId);
   commit();
   return item;
+}
+
+/**
+ * The field workflow deliberately has no reversible installation states.
+ * An item must be received first, then the crew can confirm it is installed.
+ */
+export function markItemInstalled(actor: AppUser, itemId: string) {
+  const item = db.items.find((entry) => entry.id === itemId);
+  if (!item) throw new RuleError("Item not found.");
+  const readyToInstall = ["RECEIVED_OK", "INSTALL_ASSIGNED", "INSTALL_IN_PROGRESS"] as const;
+  if (!readyToInstall.includes(item.status as (typeof readyToInstall)[number])) {
+    throw new RuleError("Confirm receipt before marking this item installed.");
+  }
+  // `force` only clears legacy intermediate states created by the old site UI.
+  return setItemStatus(actor, itemId, "INSTALLED", { force: item.status !== "RECEIVED_OK" });
 }
 
 /** Bulk move — used by the dispatch board and the BOQ table. */
