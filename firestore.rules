@@ -75,6 +75,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Temporary shared demo workspace while authentication is deliberately
+    // bypassed. Replace this with role-scoped rules before real client use.
+    match /workspaceState/{id} {
+      allow read, write: if id == 'default';
+    }
+
     match /notifications/{id} {
       allow read: if signedIn() && (isAdmin() || isSuper() || isAccts()
         || resource.data.role == role());

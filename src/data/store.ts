@@ -15,6 +15,7 @@
 import { useSyncExternalStore } from "react";
 import * as seed from "./seed";
 import * as persist from "./persistence";
+import { connectSharedWorkspace, publishSharedWorkspace } from "./cloudSync";
 import type {
   AppNotification, AppUser, AuditEntry, BoqItem, ChangeOrder, Challan, Client,
   Comment, Consignment, Crate, CreditNote, DocumentRecord, Enquiry, InventoryItem,
@@ -142,6 +143,7 @@ export function useDb(): number {
 export function commit() {
   version += 1;
   persist.save(db);
+  publishSharedWorkspace(db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
   listeners.forEach((l) => l());
 }
 
@@ -312,4 +314,30 @@ if (typeof window !== "undefined") {
     version += 1;
     listeners.forEach((l) => l());
   });
+
+  connectSharedWorkspace(
+    () => db as unknown as Record<string, unknown>,
+    (remote) => {
+      const collections: Array<keyof Db> = ["products", "kits", "programmes", "vendors", "projects", "items", "crates", "consignments", "tickets", "snags", "invoices", "payments", "costEntries"];
+      const localHasWork = collections.some((key) => Array.isArray(db[key]) && db[key].length > 0);
+      const remoteHasWork = collections.some((key) => Array.isArray(remote[key]) && (remote[key] as unknown[]).length > 0);
+      // The first shared document may have been created empty. Preserve a
+      // browser's existing work by making it the initial shared workspace.
+      if (localHasWork && !remoteHasWork) {
+        publishSharedWorkspace(db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
+        return;
+      }
+      (Object.keys(db) as Array<keyof Db>).forEach((key) => {
+        const value = remote[key];
+        // @ts-expect-error — key-wise copy across a heterogeneous record
+        if (value !== undefined && value !== null) db[key] = value;
+      });
+      persist.flush(db);
+      primeCounter();
+      recomputeAll();
+      version += 1;
+      listeners.forEach((listener) => listener());
+    },
+    (message) => { persist.status.reason = message; }
+  );
 }
