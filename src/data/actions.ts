@@ -110,6 +110,8 @@ export interface NewProjectInput {
   retentionPct: number;
   dlpMonths: number;
   kitId?: string;
+  boqMode?: "STANDARD" | "MODULAR";
+  payment?: { amount: number; reference: string; proofName?: string };
   /** productId → quantity, edited by Admin before saving. 0 drops the line. */
   quantities: Record<string, number>;
 }
@@ -129,6 +131,10 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   if (!client) throw new RuleError("Pick a client.");
   if (actor.role === "CLIENT" && !input.franchisee?.name.trim()) {
     throw new RuleError("Add the franchisee owner before submitting the showroom.");
+  }
+  if (actor.role === "CLIENT" && !input.kitId) throw new RuleError("Choose a BOQ before continuing.");
+  if (actor.role === "CLIENT" && (!input.payment || input.payment.amount <= 0 || !input.payment.reference.trim())) {
+    throw new RuleError("Enter the amount paid and the UTR or payment reference.");
   }
 
   let franchiseeId: string | undefined;
@@ -159,6 +165,8 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     programmeId: input.programmeId,
     createdByRole: actor.role,
     olaSubmittedAt: actor.role === "CLIENT" ? now() : undefined,
+    boqMode: input.boqMode,
+    standardKitId: input.boqMode === "STANDARD" ? input.kitId : undefined,
     site: {
       address: input.address.trim(),
       city: input.city.trim(),
@@ -235,11 +243,19 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
       : `${project.code} created empty`
   );
 
-  if (actor.role === "CLIENT") {
-    notify("ADMIN", "New showroom needs review", `${project.name} was submitted by Ola. Check the location and franchisee details before preparing the BOQ.`, `/admin/projects/${projectId}`);
-  }
-
   recomputeProject(projectId);
+  if (actor.role === "CLIENT" && input.payment) {
+    const percentage = project.totals.value > 0 ? Math.round((input.payment.amount / project.totals.value) * 10000) / 100 : 0;
+    project.initialPayment = {
+      amount: Math.round(input.payment.amount), percentage,
+      reference: input.payment.reference.trim(), proofName: input.payment.proofName,
+      submittedAt: now(), status: "PENDING_VERIFICATION",
+    };
+    project.advanceRequiredPct = 100;
+    project.advanceReceivedPct = percentage;
+    notify("ACCOUNTS", "Payment verification needed", `${project.name} · ₹${project.initialPayment.amount.toLocaleString("en-IN")} paid (${percentage}%). Check UTR ${project.initialPayment.reference}.`, "/accounts");
+    notify("VENDOR", "Franchisee welcome is ready", `${project.name} has been created. A login invitation will be sent when SMS/email delivery is connected.`, "/franchisee");
+  }
   commit();
   return project;
 }
@@ -256,6 +272,28 @@ export function acceptOlaShowroom(actor: AppUser, projectId: string) {
   audit(actor, `projects/${projectId}`, "UPDATE", "Ola showroom request accepted by Kurchi Admin");
   commit();
   return project;
+}
+
+/** Accounts is the financial gate between Ola's payment claim and Kurchi Admin's work queue. */
+export function verifyInitialPayment(actor: AppUser, projectId: string, approved: boolean, note?: string) {
+  if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can verify the initial payment.");
+  const project = requireProject(projectId);
+  if (!project.initialPayment || project.initialPayment.status !== "PENDING_VERIFICATION") {
+    throw new RuleError("There is no payment waiting for verification.");
+  }
+  project.initialPayment.status = approved ? "VERIFIED" : "REJECTED";
+  project.initialPayment.verifiedAt = now();
+  project.initialPayment.verifiedBy = actor.name;
+  project.initialPayment.rejectionReason = approved ? undefined : note?.trim() || "Payment reference needs correction.";
+  project.statusUpdatedAt = now();
+  if (approved) {
+    notify("ADMIN", "Payment verified — ready for Admin", `${project.name} · ₹${project.initialPayment.amount.toLocaleString("en-IN")} received (${project.initialPayment.percentage}%).`, `/admin/projects/${projectId}`);
+    notify("CLIENT", "Payment verified", `${project.name} is now with Kurchi Admin to begin the project.`, `/portal/projects/${projectId}`);
+  } else {
+    notify("CLIENT", "Payment needs correction", `${project.name}: ${project.initialPayment.rejectionReason}`, `/portal/projects/${projectId}`);
+  }
+  audit(actor, `projects/${projectId}`, "UPDATE", approved ? "Initial payment verified by Accounts" : "Initial payment sent back by Accounts");
+  commit();
 }
 
 /* ---------------------------------------------------------------- BOQ flow */

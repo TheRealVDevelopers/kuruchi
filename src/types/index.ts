@@ -210,6 +210,18 @@ export interface Project {
   standardKitId?: string;
   modularRequest?: string;
   franchiseeApprovedAt?: string;
+  /** Ola's payment claim is checked by Accounts before Admin can start work. */
+  initialPayment?: {
+    amount: number;
+    percentage: number;
+    reference: string;
+    proofName?: string;
+    submittedAt: string;
+    status: "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
+    verifiedAt?: string;
+    verifiedBy?: string;
+    rejectionReason?: string;
+  };
   advanceRequiredPct?: number;
   advanceReceivedPct?: number;
   /** Plain-language rollout stage shown to business users. Item status remains the operational source of truth. */
