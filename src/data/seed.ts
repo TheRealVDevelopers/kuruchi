@@ -30,7 +30,19 @@ export const USERS: AppUser[] = [
 export const CATEGORIES: string[] = [];
 export const PRODUCTS: Product[] = [];
 export const KITS: Kit[] = [];
-export const CLIENTS: Client[] = [];
+/** Ola is the known client organisation required to start a showroom rollout. */
+export const CLIENTS: Client[] = [
+  {
+    id: "demo-ola",
+    name: "Ola",
+    gstin: "",
+    billingAddress: "",
+    state: "",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
+  },
+];
 export const PROGRAMMES: Programme[] = [];
 export const VENDORS: Vendor[] = [];
 export const PROJECTS: Project[] = [];

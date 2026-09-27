@@ -29,9 +29,21 @@ const STORAGE_KEY = "kurchi.session";
 export const AUTH_BYPASS_ENABLED = true;
 
 function defaultDemoUser(): AppUser {
-  const admin = repo.users().find((candidate) => candidate.role === "ADMIN");
-  if (!admin) throw new Error("The temporary Admin demo user is missing.");
-  return admin;
+  const path = window.location.pathname;
+  const role: Role = path.startsWith("/portal")
+    ? "CLIENT"
+    : path.startsWith("/franchisee")
+      ? "VENDOR"
+      : path.startsWith("/site")
+        ? "INSTALLATION"
+        : path.startsWith("/accounts")
+          ? "ACCOUNTS"
+          : path.startsWith("/hq")
+            ? "SUPER_ADMIN"
+            : "ADMIN";
+  const user = repo.users().find((candidate) => candidate.role === role);
+  if (!user) throw new Error(`The temporary ${role} demo user is missing.`);
+  return user;
 }
 
 /** Where each role lands after signing in. */
