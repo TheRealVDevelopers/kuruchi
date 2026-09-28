@@ -96,6 +96,8 @@ export interface Product {
   name: string;
   slug: string;
   category: string;
+  /** Commercial bucket used to split BOQ, shipment and invoice lines. */
+  orderCategory?: "SALES" | "SERVICE";
   shortSpec: string;
   description: string;
   /** dimensions, material, finish, warranty … */
@@ -294,6 +296,7 @@ export interface BoqItem {
   projectId: string;
   productId?: string;
   name: string;
+  orderCategory?: "SALES" | "SERVICE";
   spec: string;
   hsnCode: string;
   unit: string;

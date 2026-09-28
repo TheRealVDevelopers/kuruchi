@@ -255,3 +255,36 @@ exports.getMyWorkspaceProfile = onCall(async (request) => {
   if (!profile.exists) throw new HttpsError("not-found", "This account has not been invited to Kurchi Projects.");
   return profile.data();
 });
+
+/**
+ * Optional live ETA provider. Set GOOGLE_MAPS_API_KEY in the Functions
+ * runtime to use Google Routes; without it the UI keeps its safe fallback ETA.
+ */
+exports.estimateDelivery = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const { origin, destination, method } = request.data || {};
+  if (!origin || !destination) throw new HttpsError("invalid-argument", "Origin and destination are required.");
+  const fallbackDays = method === "DIRECT_TRUCK" ? 2 : 4;
+  const fallback = () => {
+    const eta = new Date(); eta.setDate(eta.getDate() + fallbackDays);
+    return { source: "fallback", eta: eta.toISOString(), durationHours: fallbackDays * 24 };
+  };
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  if (!key) return fallback();
+  try {
+    const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key, "X-Goog-FieldMask": "routes.duration,routes.distanceMeters" },
+      body: JSON.stringify({ origin: { address: origin }, destination: { address: destination }, travelMode: "DRIVE", routingPreference: "TRAFFIC_AWARE" }),
+    });
+    if (!response.ok) throw new Error(`Routes API ${response.status}`);
+    const payload = await response.json();
+    const seconds = Number(String(payload.routes?.[0]?.duration || "0s").replace("s", ""));
+    if (!seconds) throw new Error("Routes API returned no duration");
+    const eta = new Date(Date.now() + seconds * 1000 + 24 * 60 * 60 * 1000);
+    return { source: "google-routes", eta: eta.toISOString(), durationHours: Math.ceil(seconds / 3600), distanceMeters: payload.routes[0].distanceMeters };
+  } catch (error) {
+    logger.warn("Route estimate fallback used", error);
+    return fallback();
+  }
+});

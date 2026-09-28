@@ -138,6 +138,8 @@ function ProductForm({
         <Field id="p-name" label="Name" required value={p.name} onChange={(v) => setP({ ...p, name: v })} placeholder="Storage Unit C" />
         <SelectField id="p-cat" label="Category" value={p.category} onChange={(v) => setP({ ...p, category: v })}
           options={categories.map((c) => ({ value: c, label: c }))} />
+        <SelectField id="p-order-type" label="Order category" value={p.orderCategory ?? "SALES"} onChange={(v) => setP({ ...p, orderCategory: v as "SALES" | "SERVICE" })}
+          options={[{ value: "SALES", label: "Sales" }, { value: "SERVICE", label: "Service" }]} />
         <Field id="p-hsn" label="HSN code" required value={p.hsnCode} onChange={(v) => setP({ ...p, hsnCode: v })}
           hint="Inherited by every challan and invoice" />
         <Field id="p-spec" label="Short spec" value={p.shortSpec} onChange={(v) => setP({ ...p, shortSpec: v })}

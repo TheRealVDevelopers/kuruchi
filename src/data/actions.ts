@@ -235,6 +235,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
         projectId,
         productId: line.productId,
         name: line.name,
+        orderCategory: product?.orderCategory ?? "SALES",
         spec: line.spec,
         hsnCode: product?.hsnCode ?? "",
         unit: product?.unit ?? "nos",
@@ -531,6 +532,7 @@ export function blankProgramme(clientId: string): Programme {
 export function blankProduct(): Product {
   return {
     id: nextId("prod"), name: "", slug: "", category: "Storage Units",
+    orderCategory: "SALES",
     shortSpec: "", description: "", specs: {}, hsnCode: "9403", unit: "nos",
     images: [], startingPrice: 0, defaultBasePrice: 0, defaultSellingPrice: 0,
     leadTimeDays: 14, active: true,
@@ -1145,7 +1147,7 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? 0))));
   const entries = [...quantities.entries()].map(([itemId, qty]) => ({ item: db.items.find((item) => item.id === itemId), qty }));
   if (entries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
-  const lines = entries.map(({ item, qty }) => ({ description: item!.name, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
+  const lines = entries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
   const taxable = lines.reduce((sum, line) => sum + line.taxableValue, 0);
   const mode = taxMode(project.site.state);
   const gst = Math.round(taxable * 0.18);
