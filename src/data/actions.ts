@@ -707,7 +707,7 @@ export function updateConsignment(
   consignmentId: string,
   patch: Partial<{
     lrNumber: string; transporterName: string; vehicleNo: string;
-    driverPhone: string; eta: string; ewayBillNo: string;
+    driverPhone: string; driverName: string; driverLicenceNo: string; eta: string; ewayBillNo: string;
   }>
 ) {
   const c = db.consignments.find((x) => x.id === consignmentId);
@@ -715,6 +715,54 @@ export function updateConsignment(
   Object.assign(c, patch);
   audit(actor, `consignments/${consignmentId}`, "UPDATE", Object.keys(patch).join(", ") + " updated");
   commit();
+}
+
+/**
+ * RTS is a deliberate gate, not an informal note. The delivery estimate is
+ * calculated from the selected movement method until a live route API is wired.
+ */
+export function completeRtsChecklist(
+  actor: AppUser,
+  consignmentId: string,
+  input: {
+    boxCounts: number[];
+    deliveryMethod: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY";
+    transporterName: string;
+    vehicleNo: string;
+    lrNumber: string;
+    driverName?: string;
+    driverPhone?: string;
+    driverLicenceNo?: string;
+  }
+) {
+  const consignment = db.consignments.find((entry) => entry.id === consignmentId);
+  if (!consignment) throw new RuleError("Shipment not found.");
+  const boxCounts = input.boxCounts.filter((count) => Number.isInteger(count) && count > 0);
+  if (!boxCounts.length) throw new RuleError("Enter at least one positive box count.");
+  if (!input.transporterName.trim() || !input.vehicleNo.trim() || !input.lrNumber.trim()) {
+    throw new RuleError("Transporter, vehicle number and LR number are required.");
+  }
+  if (input.deliveryMethod === "DIRECT_TRUCK" && !(input.driverName?.trim() && input.driverPhone?.trim() && input.driverLicenceNo?.trim())) {
+    throw new RuleError("Enter the direct-truck driver's name, mobile number and licence number.");
+  }
+  const eta = new Date();
+  eta.setDate(eta.getDate() + (input.deliveryMethod === "DIRECT_TRUCK" ? 2 : 4));
+  Object.assign(consignment, {
+    boxCounts,
+    deliveryMethod: input.deliveryMethod,
+    transporterName: input.transporterName.trim(),
+    vehicleNo: input.vehicleNo.trim().toUpperCase(),
+    lrNumber: input.lrNumber.trim(),
+    driverName: input.driverName?.trim() || undefined,
+    driverPhone: input.driverPhone?.trim() || undefined,
+    driverLicenceNo: input.driverLicenceNo?.trim().toUpperCase() || undefined,
+    eta: eta.toISOString(),
+    rtsCheckedAt: now(),
+  });
+  audit(actor, `consignments/${consignmentId}`, "UPDATE", `RTS checklist complete · ${boxCounts.join(" + ")} boxes`);
+  notify("ACCOUNTS", "Shipment ready for documents", `${requireProject(consignment.projectId).site.city}: create its challan and partial invoice.`, "/accounts");
+  commit();
+  return consignment;
 }
 
 /** Rules DS-02 … DS-07. `overrideReason` is the only way past a red gate. */
@@ -1052,6 +1100,7 @@ export function signHandover(actor: AppUser, projectId: string, otp: string) {
 export function createChallan(actor: AppUser, consignmentId: string) {
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
+  if (c.challanId) throw new RuleError("A delivery challan already exists for this shipment.");
   const project = requireProject(c.projectId);
   const client = db.users.find((u) => u.clientId);
   void client;
@@ -1081,6 +1130,40 @@ export function createChallan(actor: AppUser, consignmentId: string) {
   audit(actor, `challans/${challan.id}`, "CREATE", `${challan.number} for ${project.name}`);
   commit();
   return challan;
+}
+
+/** Creates one GST invoice for exactly the selected items in one shipment. */
+export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
+  if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can create a shipment invoice.");
+  const consignment = db.consignments.find((entry) => entry.id === consignmentId);
+  if (!consignment) throw new RuleError("Shipment not found.");
+  if (!consignment.challanId) throw new RuleError("Create the delivery challan before invoicing this shipment.");
+  if (consignment.invoiceId) throw new RuleError("This shipment has already been invoiced.");
+  const project = requireProject(consignment.projectId);
+  const crates = db.crates.filter((crate) => consignment.crateIds.includes(crate.id));
+  const quantities = new Map<string, number>();
+  crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? 0))));
+  const entries = [...quantities.entries()].map(([itemId, qty]) => ({ item: db.items.find((item) => item.id === itemId), qty }));
+  if (entries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
+  const lines = entries.map(({ item, qty }) => ({ description: item!.name, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
+  const taxable = lines.reduce((sum, line) => sum + line.taxableValue, 0);
+  const mode = taxMode(project.site.state);
+  const gst = Math.round(taxable * 0.18);
+  const due = new Date(NOW); due.setDate(due.getDate() + 30);
+  const invoice = {
+    id: nextId("inv"), number: nextDocNumber("INV"), projectId: project.id, clientId: project.clientId,
+    placeOfSupplyState: project.site.state, lines, taxMode: mode,
+    cgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0, sgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0, igst: mode === "IGST" ? gst : 0,
+    taxableValue: taxable, total: taxable + gst, retentionPct: 0, retentionAmount: 0, netPayable: taxable + gst,
+    challanIds: [consignment.challanId], issuedAt: now(), dueDate: due.toISOString(), status: "ISSUED" as const, amountReceived: 0,
+  };
+  db.invoices.unshift(invoice);
+  consignment.invoiceId = invoice.id;
+  entries.forEach(({ item, qty }) => { if (item) item.qtyInvoiced = Math.min(item.qty, (item.qtyInvoiced ?? 0) + qty); });
+  audit(actor, `invoices/${invoice.id}`, "CREATE", `${invoice.number} · partial shipment for ${project.name}`);
+  notify("VENDOR", "Shipment invoice is ready", `${project.site.city}: ${invoice.number} is available in your documents.`, "/franchisee");
+  commit();
+  return invoice;
 }
 
 /** Rule DS-03/DS-04 — Part A then Part B, before the vehicle moves. */

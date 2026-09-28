@@ -141,6 +141,12 @@ export function canDispatch({ project, consignment, crates }: DispatchContext): 
               .join(", ")}.`,
           }
         : null,
+      !consignment.rtsCheckedAt || !consignment.boxCounts?.length
+        ? { id: "DS-01", reason: "Complete the ready-to-ship box checklist first." }
+        : null,
+      consignment.deliveryMethod === "DIRECT_TRUCK" && !(consignment.driverName && consignment.driverPhone && consignment.driverLicenceNo)
+        ? { id: "DS-01", reason: "Direct truck needs the driver's name, mobile number and licence number." }
+        : null,
       needsEway && !consignment.ewayBillNo
         ? {
             id: "DS-03",

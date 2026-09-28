@@ -310,6 +310,8 @@ export interface BoqItem {
   qtyDispatched: number;
   qtyReceived: number;
   qtyInstalled: number;
+  /** Quantity already billed through shipment-specific invoices. */
+  qtyInvoiced?: number;
   /** Running quantities used when one BOQ line is split across suppliers or crates. */
   qtyOrdered?: number;
   qtyReadyToPack?: number;
@@ -348,11 +350,20 @@ export interface Consignment {
   transporterName?: string;
   vehicleNo?: string;
   driverPhone?: string;
+  driverName?: string;
+  driverLicenceNo?: string;
+  /** Direct truck is Kurchi-arranged; delivery is a third-party service. */
+  deliveryMethod?: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY";
+  /** Box counts captured in the ready-to-ship checklist before dispatch. */
+  boxCounts?: number[];
+  rtsCheckedAt?: string;
   lrNumber?: string;
   dispatchedAt?: string;
   eta?: string;
   deliveredAt?: string;
   taxableValue: number;
+  /** One partial shipment can have its own invoice and delivery challan. */
+  invoiceId?: string;
   /** interstate movement drives e-way bill and IGST — rules DS-03, FN-02 */
   interState: boolean;
   overrideReason?: string;
@@ -567,7 +578,7 @@ export interface CostEntry {
 export interface DocumentRecord {
   id: string;
   projectId: string;
-  type: "DRAWING" | "BOQ" | "CHALLAN" | "INVOICE" | "LR" | "HANDOVER" | "OTHER";
+  type: "DRAWING" | "BOQ" | "CHALLAN" | "INVOICE" | "LR" | "HANDOVER" | "KYC_GST" | "KYC_MSME" | "KYC_CANCELLED_CHEQUE" | "DESIGN_2D" | "DESIGN_3D" | "BROCHURE" | "EWAY_BILL" | "OTHER";
   name: string;
   addedBy: string;
   addedAt: string;
