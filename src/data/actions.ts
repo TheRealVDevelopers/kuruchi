@@ -153,6 +153,9 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   if (actor.role === "CLIENT" && input.boqMode === "MODULAR" && !Object.values(input.quantities).some((qty) => qty > 0)) {
     throw new RuleError("Set a quantity for at least one catalogue product.");
   }
+  if (actor.role === "CLIENT" && input.boqMode === "MODULAR" && Object.values(input.quantities).some((qty) => !Number.isInteger(qty) || qty < 0)) {
+    throw new RuleError("Modular BOQ quantities must be whole numbers of zero or more.");
+  }
   if (actor.role === "CLIENT" && (!input.payment || input.payment.amount <= 0 || !input.payment.reference.trim())) {
     throw new RuleError("Enter the amount paid and the UTR or payment reference.");
   }
@@ -266,7 +269,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     "CREATE",
     kit
       ? `${project.code} created from kit "${kit.name}" v${kit.version} — ${lineCount} lines`
-      : `${project.code} created empty`
+      : `${project.code} created from the Modular catalogue — ${lineCount} lines`
   );
 
   recomputeProject(projectId);
