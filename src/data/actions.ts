@@ -459,8 +459,10 @@ export function updateItemPricing(
   itemId: string,
   patch: Partial<BoqItem["pricing"]>
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can change BOQ pricing.");
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
+  if (Object.values(patch).some((value) => typeof value === "number" && value < 0)) throw new RuleError("Prices and allocated costs cannot be negative.");
   Object.assign(item.pricing, patch);
   audit(actor, `items/${itemId}`, "UPDATE", `Pricing changed on ${item.name}`);
   recomputeProject(item.projectId);
@@ -468,6 +470,7 @@ export function updateItemPricing(
 }
 
 export function setItemQty(actor: AppUser, itemId: string, qty: number) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can change BOQ quantities.");
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
   item.qty = Math.max(0, Math.round(qty));
@@ -540,6 +543,7 @@ export function removeBoqLine(actor: AppUser, itemId: string) {
 /* ---------------------------------------------------------------- masters */
 
 export function saveClient(actor: AppUser, client: Client) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage clients.");
   if (!client.name.trim()) throw new RuleError("A client name is required.");
   const idx = db.clients.findIndex((c) => c.id === client.id);
   if (idx >= 0) db.clients[idx] = client;
@@ -1492,6 +1496,9 @@ export function addComment(actor: AppUser, projectId: string, body: string) {
 /* -------------------------------------------------------------- masters */
 
 export function saveProduct(actor: AppUser, product: Product) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage catalogue products.");
+  if (!product.name.trim() || !product.hsnCode.trim()) throw new RuleError("Product name and HSN code are required.");
+  if (product.defaultBasePrice < 0 || product.defaultSellingPrice < 0) throw new RuleError("Product prices cannot be negative.");
   const existing = db.products.findIndex((p) => p.id === product.id);
   if (existing >= 0) db.products[existing] = product;
   else db.products.push(product);
@@ -1505,6 +1512,7 @@ export function blankKit(): Kit {
 
 /** The one reusable Standard BOQ. Modular projects always use the full catalogue. */
 export function saveKit(actor: AppUser, kit: Kit) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage BOQ kits.");
   if (!kit.name.trim()) throw new RuleError("Give this BOQ kit a name.");
   if (!kit.lines.length) throw new RuleError("Add at least one catalogue item to this BOQ kit.");
   const cleaned = { ...kit, mode: "STANDARD" as const, name: kit.name.trim(), lines: kit.lines.filter((line) => line.productId && line.defaultQty > 0) };
@@ -1513,7 +1521,7 @@ export function saveKit(actor: AppUser, kit: Kit) {
   if (db.kits.some((entry) => entry.id !== kit.id && entry.active && entry.mode !== "MODULAR")) {
     throw new RuleError("Only one active Standard BOQ is allowed. Edit the existing Standard BOQ instead.");
   }
-  if (existing >= 0) db.kits[existing] = cleaned;
+  if (existing >= 0) db.kits[existing] = { ...cleaned, version: Math.max(cleaned.version, db.kits[existing].version + 1) };
   else db.kits.push(cleaned);
   audit(actor, `kits/${kit.id}`, existing >= 0 ? "UPDATE" : "CREATE", `${cleaned.name} · ${cleaned.lines.length} items`);
   commit();
@@ -1528,6 +1536,7 @@ export function toggleProduct(actor: AppUser, productId: string) {
 }
 
 export function saveVendor(actor: AppUser, vendor: Vendor) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage franchisees and suppliers.");
   const existing = db.vendors.findIndex((v) => v.id === vendor.id);
   if (existing >= 0) db.vendors[existing] = vendor;
   else db.vendors.push(vendor);
@@ -1536,8 +1545,11 @@ export function saveVendor(actor: AppUser, vendor: Vendor) {
 }
 
 export function setUserActive(actor: AppUser, uid: string, active: boolean) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can change user access.");
   const u = db.users.find((x) => x.uid === uid);
   if (!u) return;
+  if (!active && u.uid === actor.uid) throw new RuleError("You cannot deactivate your own account.");
+  if (!active && u.role === "ADMIN" && db.users.filter((entry) => entry.role === "ADMIN" && entry.active).length <= 1) throw new RuleError("Keep at least one active Admin account.");
   u.active = active;
   audit(actor, `users/${uid}`, "UPDATE", `${u.name} ${active ? "activated" : "deactivated"}`);
   commit();
