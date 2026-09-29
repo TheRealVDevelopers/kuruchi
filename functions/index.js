@@ -126,7 +126,13 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
     user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, displayName: data.name?.trim(), disabled: false });
   }
 
-  const claims = { role: data.role, active: true, clientId: data.clientId || null, teamId: data.teamId || null };
+  const claims = {
+    role: data.role,
+    active: true,
+    clientId: data.clientId || null,
+    teamId: data.teamId || null,
+    vendorId: data.vendorId || null,
+  };
   await admin.setCustomUserClaims(user.uid, claims);
   const profile = {
     uid: user.uid,
@@ -136,6 +142,7 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
     active: true,
     clientId: data.clientId || undefined,
     teamId: data.teamId || undefined,
+    vendorId: data.vendorId || undefined,
     phoneNumber: data.phoneNumber || user.phoneNumber || undefined,
     provisionedAt: FieldValue.serverTimestamp(),
     provisionedBy: request.auth.uid,
