@@ -17,11 +17,11 @@ import { ITEM_STATUS_META, STAGES, projectProgress, type Stage } from "@/lib/sta
 import { cn } from "@/lib/utils";
 import type { SnagSeverity } from "@/types";
 
-const TABS = ["progress", "timeline", "scope", "deliveries", "documents", "messages", "snags", "handover"] as const;
+const TABS = ["progress", "activity", "timeline", "scope", "deliveries", "documents", "messages", "snags", "handover"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABEL: Record<Tab, string> = {
-  progress: "Progress", timeline: "Timeline", scope: "Scope", deliveries: "Deliveries",
+  progress: "Progress", activity: "Activity", timeline: "Timeline", scope: "Scope", deliveries: "Deliveries",
   documents: "Documents", messages: "Messages", snags: "Snags", handover: "Handover",
 };
 
@@ -44,6 +44,7 @@ export default function PortalProjectPage() {
   const consignments = repo.consignments(project.id);
   const snags = repo.snags(project.id);
   const signed = repo.handoverSigned(project.id);
+  const clientActivity = repo.audit().filter((entry) => entry.entity === `projects/${project.id}` || (entry.entity.startsWith("items/") && repo.itemById(entry.entity.slice(6))?.projectId === project.id) || (entry.entity.startsWith("consignments/") && repo.consignmentById(entry.entity.slice(13))?.projectId === project.id)).filter((entry) => !/cost|margin|vendor|internal/i.test(entry.detail)).slice(0, 30);
   const schedule = repo.scheduleTasks(project.id);
   const documents = repo.documents(project.id).filter((document) =>
     ["BOQ", "CHALLAN", "INVOICE", "HANDOVER"].includes(document.type)
@@ -112,6 +113,7 @@ export default function PortalProjectPage() {
         </div>
       )}
 
+      {tab === "activity" && <section className="rounded-lg border bg-card p-4 sm:p-5"><h3 className="font-bold">Showroom activity</h3><p className="mt-1 text-sm text-muted-foreground">Your latest showroom updates, newest first.</p><div className="mt-4 space-y-3">{clientActivity.length ? clientActivity.map((entry) => <article key={entry.id} className="border-l-2 border-primary/30 pl-3"><p className="text-sm font-bold">{entry.detail}</p><p className="mt-1 text-xs text-muted-foreground">{entry.actorName} · {formatDate(entry.at, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p></article>) : <EmptyState title="No showroom activity yet" hint="Updates will appear as Kurchi moves the showroom forward." />}</div></section>}
       {tab === "timeline" && (
         <div className="space-y-3">
           {schedule.length === 0 ? <EmptyState title="Timeline is being prepared" hint="Kurchi will publish milestone dates here shortly." /> : schedule.map((task) => (
