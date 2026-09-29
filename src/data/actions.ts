@@ -99,7 +99,7 @@ export function setItemStatus(
   if (!item) throw new RuleError("Item not found.");
   const project = requireProject(item.projectId);
   if (actor.role !== "ADMIN" && actor.role !== "INSTALLATION") throw new RuleError("Only Kurchi Admin or the assigned installation team can update BOQ item status.");
-  if (["DISPATCHED", "IN_TRANSIT", "DELIVERED_AT_SITE"].includes(to)) throw new RuleError("Use the dispatch and site-receipt workflow for movement statuses.");
+  if (["PACKED", "DISPATCHED", "IN_TRANSIT", "DELIVERED_AT_SITE"].includes(to)) throw new RuleError("Use the packing, dispatch and site-receipt workflow for movement statuses.");
   if (["RECEIVED_OK", "RECEIVED_DAMAGED", "SHORT_SUPPLIED", "INSTALLED"].includes(to)) {
     requireAssignedInstallation(actor, project);
   } else if (actor.role !== "ADMIN") {
@@ -121,6 +121,7 @@ export function setItemStatus(
   const from = item.status;
   item.status = to;
   item.statusUpdatedAt = now();
+  if (to === "READY_TO_PACK") item.qtyReadyToPack = Math.max(0, item.qty - item.qtyDispatched);
 
   if ((to === "INSTALL_IN_PROGRESS" || to === "INSTALLED") && !project.installationStartedAt) {
     project.installationStartedAt = now();
@@ -509,6 +510,21 @@ export function setProjectLifecycle(actor: AppUser, projectId: string, action: "
   project.statusUpdatedAt = now();
   audit(actor, `projects/${projectId}`, "UPDATE", `Project ${action.toLowerCase()}d · ${reason.trim()}`);
   notify("ALL", `Project ${action.toLowerCase()}d`, `${project.site.city}: ${reason.trim()}`, `/admin/projects/${projectId}`);
+  commit();
+}
+
+/** Admin assigns the operational people after an Ola-created showroom is accepted. */
+export function setProjectAssignments(actor: AppUser, projectId: string, input: { franchiseeId?: string; installationTeamId?: string }) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can assign a franchisee or installation team.");
+  const project = requireProject(projectId);
+  if (input.franchiseeId && !db.vendors.some((vendor) => vendor.id === input.franchiseeId && vendor.type === "FRANCHISEE")) throw new RuleError("Choose a valid franchisee owner.");
+  if (input.installationTeamId && !db.vendors.some((vendor) => vendor.id === input.installationTeamId && vendor.type === "INSTALLATION")) throw new RuleError("Choose a valid installation team.");
+  project.franchiseeId = input.franchiseeId || undefined;
+  project.installationTeamId = input.installationTeamId || undefined;
+  project.statusUpdatedAt = now();
+  audit(actor, `projects/${projectId}`, "UPDATE", `Assignments updated · franchisee ${project.franchiseeId ? "set" : "cleared"}, installation ${project.installationTeamId ? "set" : "cleared"}`);
+  notify("VENDOR", "Showroom assignment updated", `${project.site.city} is now assigned to your franchisee workspace.`, "/franchisee");
+  notify("INSTALLATION", "Site assignment updated", `${project.site.city} is now assigned to your site workspace.`, `/site/${project.id}`);
   commit();
 }
 

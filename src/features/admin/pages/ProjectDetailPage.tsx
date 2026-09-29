@@ -40,6 +40,8 @@ export default function ProjectDetailPage() {
   const [comment, setComment] = useState("");
   const [override, setOverride] = useState<string | null>(null);
   const [lifecycleReason, setLifecycleReason] = useState("");
+  const [assignedFranchisee, setAssignedFranchisee] = useState(() => repo.projectById(user, projectId)?.franchiseeId ?? "");
+  const [assignedTeam, setAssignedTeam] = useState(() => repo.projectById(user, projectId)?.installationTeamId ?? "");
 
   const project = repo.projectById(user, projectId);
   if (!project || !user) {
@@ -60,6 +62,8 @@ export default function ProjectDetailPage() {
   const invoices = repo.invoices(project.id);
   const logs = repo.progressLogs(project.id);
   const comments = repo.comments(project.id);
+  const franchisees = repo.vendors("FRANCHISEE");
+  const installationTeams = repo.vendors("INSTALLATION");
 
   const boqColumns: Column<BoqItem>[] = [
     {
@@ -178,6 +182,18 @@ export default function ProjectDetailPage() {
                   <button type="button" onClick={() => { const ok = run(() => act.setProjectLifecycle(user, project.id, "HOLD", lifecycleReason), "Project put on hold"); if (ok) setLifecycleReason(""); }} className="min-h-11 rounded-md border px-4 text-sm font-semibold hover:bg-muted">Put on hold</button>
                 ) : null}
                 {! ["COMPLETED", "CLOSED", "CANCELLED"].includes(project.status) && <button type="button" onClick={() => { const ok = run(() => act.setProjectLifecycle(user, project.id, "CANCEL", lifecycleReason), "Project cancelled"); if (ok) setLifecycleReason(""); }} className="min-h-11 rounded-md border border-red-300 px-4 text-sm font-semibold text-red-700 hover:bg-red-50">Cancel project</button>}
+              </div>
+            </section>
+          )}
+
+          {!readOnly && (
+            <section className="rounded-lg border bg-card p-4">
+              <h3 className="font-bold">People assigned to this showroom</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Choose the franchisee who approves the BOQ and the crew who receives and installs material.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <select value={assignedFranchisee} onChange={(event) => setAssignedFranchisee(event.target.value)} className="min-h-11 rounded-md border bg-background px-3 text-sm"><option value="">No franchisee assigned</option>{franchisees.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select>
+                <select value={assignedTeam} onChange={(event) => setAssignedTeam(event.target.value)} className="min-h-11 rounded-md border bg-background px-3 text-sm"><option value="">No installation team assigned</option>{installationTeams.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select>
+                <button type="button" onClick={() => run(() => act.setProjectAssignments(user, project.id, { franchiseeId: assignedFranchisee || undefined, installationTeamId: assignedTeam || undefined }), "Showroom assignments saved")} className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground">Save assignments</button>
               </div>
             </section>
           )}
