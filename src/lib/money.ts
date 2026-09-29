@@ -64,7 +64,7 @@ export function rollUp(items: BoqItem[]): LineMoney {
     landedCost: 0, quotedMargin: 0, realMargin: 0, marginPct: 0, erosion: 0,
   };
 
-  const sum = items.reduce((acc, item) => {
+  const sum = items.filter((item) => item.status !== "CANCELLED").reduce((acc, item) => {
     const m = itemMoney(item);
     return {
       ...acc,

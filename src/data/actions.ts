@@ -33,6 +33,25 @@ function requireProject(projectId: string) {
   return p;
 }
 
+function requireAccounts(actor: AppUser) {
+  if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can complete this financial action.");
+}
+
+function requireInvoiceParties(project: Project) {
+  const client = db.clients.find((entry) => entry.id === project.clientId);
+  if (!client?.name || !client.gstin || !client.billingAddress || !client.state) {
+    throw new RuleError("Complete the customer name, GSTIN, billing address and state before issuing a tax document.", ["FN-01"]);
+  }
+  if (!project.site.address || !project.site.state || !project.site.pincode) {
+    throw new RuleError("Complete the showroom delivery address before issuing a tax document.", ["FN-01"]);
+  }
+  return client;
+}
+
+function creditedAmount(invoiceId: string) {
+  return db.creditNotes.filter((note) => note.invoiceId === invoiceId).reduce((sum, note) => sum + note.amount, 0);
+}
+
 function notify(role: Role | "ALL", title: string, detail: string, link?: string) {
   db.notifications.unshift({
     id: nextId("ntf"), role, title, detail, link, createdAt: now(), readBy: [],
@@ -280,8 +299,8 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
       reference: input.payment.reference.trim(), proofName: input.payment.proofName, proofUrl: input.payment.proofUrl,
       submittedAt: now(), status: "PENDING_VERIFICATION",
     };
-    project.advanceRequiredPct = 100;
-    project.advanceReceivedPct = percentage;
+    project.advanceRequiredPct = project.advanceRequiredPct ?? 0;
+    project.advanceReceivedPct = 0;
     notify("ACCOUNTS", "Payment verification needed", `${project.name} · ₹${project.initialPayment.amount.toLocaleString("en-IN")} paid (${percentage}%). Check UTR ${project.initialPayment.reference}.`, "/accounts");
     notify("VENDOR", "Franchisee welcome is ready", `${project.name} has been created. A login invitation will be sent when SMS/email delivery is connected.`, "/franchisee");
   }
@@ -316,9 +335,12 @@ export function verifyInitialPayment(actor: AppUser, projectId: string, approved
   project.initialPayment.rejectionReason = approved ? undefined : note?.trim() || "Payment reference needs correction.";
   project.statusUpdatedAt = now();
   if (approved) {
+    project.advanceReceivedPct = project.initialPayment.percentage;
+    db.payments.unshift({ id: nextId("pay"), invoiceId: `advance-${project.id}`, clientId: project.clientId, amount: project.initialPayment.amount, receivedAt: now(), mode: "ADVANCE", reference: project.initialPayment.reference });
     notify("ADMIN", "Payment verified — ready for Admin", `${project.name} · ₹${project.initialPayment.amount.toLocaleString("en-IN")} received (${project.initialPayment.percentage}%).`, `/admin/projects/${projectId}`);
     notify("CLIENT", "Payment verified", `${project.name} is now with Kurchi Admin to begin the project.`, `/portal/projects/${projectId}`);
   } else {
+    project.advanceReceivedPct = 0;
     notify("CLIENT", "Payment needs correction", `${project.name}: ${project.initialPayment.rejectionReason}`, `/portal/projects/${projectId}`);
   }
   audit(actor, `projects/${projectId}`, "UPDATE", approved ? "Initial payment verified by Accounts" : "Initial payment sent back by Accounts");
@@ -689,7 +711,7 @@ export function createDispatchBatch(
   });
   db.consignments.unshift({
     id: consignmentId, projectId: input.projectId, crateIds: [crateId], taxableValue: items.reduce((sum, item, index) => sum + (item?.pricing.finalPrice ?? 0) * input.allocations[index].qty, 0),
-    interState: false, status: "READY",
+    interState: project.site.state.trim().toLowerCase() !== "karnataka", status: "READY",
   });
   items.forEach((item, index) => { if (!item) return; item.qtyReadyToPack = (item.qtyReadyToPack ?? 0) - input.allocations[index].qty; item.status = "PACKED"; item.statusUpdatedAt = now(); item.crateId = crateId; item.consignmentId = consignmentId; });
   audit(actor, `consignments/${consignmentId}`, "CREATE", `Packing batch ${input.crateCode.trim().toUpperCase()} created`);
@@ -1120,24 +1142,19 @@ export function signHandover(actor: AppUser, projectId: string, otp: string) {
 
 /** Rule FN-01 — goods move on a challan, not an invoice. */
 export function createChallan(actor: AppUser, consignmentId: string) {
+  requireAccounts(actor);
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
   if (c.challanId) throw new RuleError("A delivery challan already exists for this shipment.");
   const project = requireProject(c.projectId);
-  const client = db.users.find((u) => u.clientId);
-  void client;
+  const client = requireInvoiceParties(project);
 
   const challan = {
     id: nextId("dc"),
     number: nextDocNumber("DC"),
     projectId: c.projectId,
     consignmentId,
-    billTo: {
-      name: "Ola Electric Mobility Ltd",
-      gstin: "29AAFCO1234M1Z5",
-      address: "Ola Campus, Lavelle Road, Bengaluru 560001",
-      state: "Karnataka",
-    },
+    billTo: { name: client.name, gstin: client.gstin, address: client.billingAddress, state: client.state },
     shipTo: {
       name: `Ola Showroom — ${project.site.city}`,
       address: `${project.site.address}, ${project.site.city} ${project.site.pincode}`,
@@ -1156,12 +1173,13 @@ export function createChallan(actor: AppUser, consignmentId: string) {
 
 /** Creates one GST invoice for exactly the selected items in one shipment. */
 export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
-  if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can create a shipment invoice.");
+  requireAccounts(actor);
   const consignment = db.consignments.find((entry) => entry.id === consignmentId);
   if (!consignment) throw new RuleError("Shipment not found.");
   if (!consignment.challanId) throw new RuleError("Create the delivery challan before invoicing this shipment.");
   if (consignment.invoiceId) throw new RuleError("This shipment has already been invoiced.");
   const project = requireProject(consignment.projectId);
+  const client = requireInvoiceParties(project);
   const crates = db.crates.filter((crate) => consignment.crateIds.includes(crate.id));
   const quantities = new Map<string, number>();
   crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? 0))));
@@ -1171,7 +1189,7 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   if (entries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
   const lines = entries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
   const taxable = lines.reduce((sum, line) => sum + line.taxableValue, 0);
-  const mode = taxMode(project.site.state);
+  const mode = taxMode(client.state);
   const gst = Math.round(taxable * 0.18);
   const due = new Date(NOW); due.setDate(due.getDate() + 30);
   const invoice = {
@@ -1214,8 +1232,10 @@ export function recordEwayBill(
   transporterName: string,
   vehicleNo: string
 ) {
+  requireAccounts(actor);
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
+  if (!c.challanId && !c.invoiceId) throw new RuleError("Create a delivery challan or tax invoice before recording its e-way bill.", ["DS-08"]);
   if (!/^\d{12}$/.test(ewayBillNo.trim())) {
     throw new RuleError("An e-way bill number is 12 digits.", ["DS-03"]);
   }
@@ -1238,7 +1258,9 @@ export function issueInvoice(
   projectId: string,
   opts: { final: boolean; percent: number; description: string }
 ) {
+  requireAccounts(actor);
   const project = requireProject(projectId);
+  const client = requireInvoiceParties(project);
   if (opts.final) {
     const verdict = canRaiseFinalInvoice(project);
     if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
@@ -1249,7 +1271,9 @@ export function issueInvoice(
   if (missingHsn.length) throw new RuleError(`${missingHsn.length} line(s) have no HSN code.`, ["FN-03"]);
 
   const taxable = Math.round((project.totals.value * opts.percent) / 100);
-  const mode = taxMode(project.site.state);
+  const previouslyBilled = db.invoices.filter((invoice) => invoice.projectId === projectId).reduce((sum, invoice) => sum + invoice.taxableValue - creditedAmount(invoice.id), 0);
+  if (previouslyBilled + taxable > project.totals.value) throw new RuleError("This would bill more than the approved BOQ value. Use a credit note or choose the remaining value.", ["FN-06"]);
+  const mode = taxMode(client.state);
   const gst = Math.round(taxable * 0.18);
   const retention = Math.round((taxable * project.retentionPct) / 100);
   const due = new Date(NOW);
@@ -1303,10 +1327,11 @@ export function issueInvoice(
 
 /** Rule FN-08 — part payments age the balance. */
 export function recordPayment(actor: AppUser, invoiceId: string, amount: number, mode: string) {
+  requireAccounts(actor);
   const inv = db.invoices.find((i) => i.id === invoiceId);
   if (!inv) throw new RuleError("Invoice not found.");
   if (amount <= 0) throw new RuleError("Enter an amount.");
-  const outstanding = inv.netPayable - inv.amountReceived;
+  const outstanding = inv.netPayable - inv.amountReceived - creditedAmount(inv.id);
   if (amount > outstanding) throw new RuleError(`That is more than the ₹${outstanding} outstanding.`);
 
   inv.amountReceived += amount;
@@ -1362,16 +1387,17 @@ export function decideChangeOrder(actor: AppUser, id: string, approved: boolean,
 }
 
 export function createCreditNote(actor: AppUser, invoiceId: string, amount: number, reason: string) {
+  requireAccounts(actor);
   const invoice = db.invoices.find((i) => i.id === invoiceId);
   if (!invoice) throw new RuleError("Invoice not found.");
-  if (amount <= 0 || amount > invoice.netPayable) throw new RuleError("Credit amount must be within the invoice net payable amount.");
+  if (amount <= 0 || amount > invoice.netPayable - creditedAmount(invoiceId)) throw new RuleError("Credit amount must be within the remaining invoice value.");
   if (!reason.trim()) throw new RuleError("Give a reason for the credit note.");
   const note: CreditNote = {
     id: nextId("cnote"), number: `KP/CN/26-27/${String(db.creditNotes.length + 1).padStart(4, "0")}`,
     invoiceId, projectId: invoice.projectId, amount: Math.round(amount), reason: reason.trim(), issuedAt: now(),
   };
   db.creditNotes.unshift(note);
-  invoice.status = "CREDIT_NOTED";
+  if (invoice.amountReceived + creditedAmount(invoiceId) >= invoice.netPayable) invoice.status = "CREDIT_NOTED";
   audit(actor, `creditNotes/${note.id}`, "CREATE", `${note.number} against ${invoice.number}`);
   commit();
   return note;
@@ -1392,8 +1418,13 @@ export function saveInventory(actor: AppUser, row: InventoryItem) {
 }
 
 export function saveVendorBill(actor: AppUser, bill: VendorBill) {
+  requireAccounts(actor);
   if (!bill.vendorId || !bill.billNumber.trim() || bill.amount <= 0) throw new RuleError("Vendor, bill number and amount are required.");
-  const matched = Boolean(bill.poNumber?.trim() && bill.grnReference?.trim());
+  if (db.vendorBills.some((entry) => entry.id !== bill.id && entry.vendorId === bill.vendorId && entry.billNumber.trim().toLowerCase() === bill.billNumber.trim().toLowerCase())) throw new RuleError("This vendor invoice number is already recorded.");
+  const order = bill.poNumber ? db.purchaseOrders.find((entry) => entry.number === bill.poNumber) : undefined;
+  if (bill.poNumber && !order) throw new RuleError("Select a valid purchase order before matching this bill.");
+  if (order && bill.amount > order.amount) throw new RuleError("Vendor bill amount cannot exceed its linked purchase order.");
+  const matched = Boolean(order && bill.grnReference?.trim());
   const saved: VendorBill = { ...bill, status: matched ? "MATCHED" : "PENDING" };
   const existing = db.vendorBills.findIndex((b) => b.id === bill.id);
   if (existing >= 0) db.vendorBills[existing] = saved;

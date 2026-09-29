@@ -194,7 +194,10 @@ export function nextDocNumber(kind: "DC" | "INV"): string {
     .filter((n) => Number.isFinite(n))
     .reduce((max, n) => Math.max(max, n), kind === "DC" ? 141 : 121);
 
-  return `KP/${kind}/26-27/${String(highest + 1).padStart(4, "0")}`;
+  const date = new Date();
+  const start = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+  const fy = `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
+  return `KP/${kind === "INV" ? "I" : "D"}/${fy}/${String(highest + 1).padStart(4, "0")}`;
 }
 
 /**

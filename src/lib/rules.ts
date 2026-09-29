@@ -124,8 +124,7 @@ export interface DispatchContext {
  */
 export function canDispatch({ project, consignment, crates }: DispatchContext): RuleVerdict {
   const noPhotos = crates.filter((c) => c.photos.length === 0);
-  const needsEway =
-    consignment.taxableValue > EWAY_BILL_THRESHOLD || consignment.interState;
+  const needsEway = consignment.taxableValue * 1.18 > EWAY_BILL_THRESHOLD;
   const readiness = project.siteReadiness;
   const notReady = Object.entries(readiness)
     .filter(([, ok]) => !ok)
@@ -143,6 +142,9 @@ export function canDispatch({ project, consignment, crates }: DispatchContext): 
         : null,
       !consignment.rtsCheckedAt || !consignment.boxCounts?.length
         ? { id: "DS-01", reason: "Complete the ready-to-ship box checklist first." }
+        : null,
+      !consignment.challanId && !consignment.invoiceId
+        ? { id: "DS-08", reason: "Create either a delivery challan or a tax invoice before dispatch." }
         : null,
       consignment.deliveryMethod === "DIRECT_TRUCK" && !(consignment.driverName && consignment.driverPhone && consignment.driverLicenceNo)
         ? { id: "DS-01", reason: "Direct truck needs the driver's name, mobile number and licence number." }

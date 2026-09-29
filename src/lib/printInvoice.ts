@@ -5,8 +5,9 @@ const text = (value?: string) => String(value ?? "").replace(/[&<>"']/g, (charac
 
 /** Opens a clean A4 print sheet. The browser's Print dialog can also save it as a PDF. */
 export function printTaxInvoice(invoice: Invoice, project?: Project, client?: Client | null) {
-  const popup = window.open("", "_blank", "noopener,noreferrer");
+  const popup = window.open("", "_blank");
   if (!popup) return false;
+  try { popup.opener = null; } catch { /* Browser may restrict opener access. */ }
   const taxRows = invoice.taxMode === "IGST"
     ? `<tr><td colspan="5" class="right">IGST @ 18%</td><td class="right">${money(invoice.igst)}</td></tr>`
     : `<tr><td colspan="5" class="right">CGST @ 9%</td><td class="right">${money(invoice.cgst)}</td></tr><tr><td colspan="5" class="right">SGST @ 9%</td><td class="right">${money(invoice.sgst)}</td></tr>`;

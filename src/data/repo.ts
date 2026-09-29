@@ -175,7 +175,8 @@ export function receivablesAgeing(user: AppUser | null) {
   const buckets = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
   for (const inv of db.invoices) {
     if (!ids.has(inv.projectId)) continue;
-    const outstanding = inv.netPayable - inv.amountReceived;
+    const credited = db.creditNotes.filter((note) => note.invoiceId === inv.id).reduce((sum, note) => sum + note.amount, 0);
+    const outstanding = inv.netPayable - inv.amountReceived - credited;
     if (outstanding <= 0) continue;
     const days = Math.floor((NOW.getTime() - new Date(inv.issuedAt).getTime()) / 86_400_000);
     if (days <= 30) buckets["0-30"] += outstanding;
