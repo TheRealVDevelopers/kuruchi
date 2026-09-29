@@ -37,6 +37,18 @@ function requireAccounts(actor: AppUser) {
   if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can complete this financial action.");
 }
 
+function requireAssignedInstallation(actor: AppUser, project: Project) {
+  if (actor.role !== "INSTALLATION" || !actor.teamId || actor.teamId !== project.installationTeamId) {
+    throw new RuleError("Only the installation team assigned to this showroom can update site work.");
+  }
+}
+
+function requireFranchisee(actor: AppUser, project: Project) {
+  if (actor.role !== "VENDOR" || !actor.vendorId || actor.vendorId !== project.franchiseeId) {
+    throw new RuleError("Only this showroom’s franchisee owner can take that action.");
+  }
+}
+
 function requireInvoiceParties(project: Project) {
   const seller = db.sellerProfile;
   if (!seller.legalName || !seller.gstin || !seller.pan || !seller.address || !seller.state || !seller.pincode) throw new RuleError("Complete Kurchi’s legal seller profile before issuing a tax document.", ["FN-01"]);
@@ -415,6 +427,7 @@ export function chooseFranchiseeBoq(
 }
 
 export function setProjectAdvance(actor: AppUser, projectId: string, requiredPct: number, receivedPct: number) {
+  requireAccounts(actor);
   const project = requireProject(projectId);
   project.advanceRequiredPct = Math.max(0, Math.min(100, Math.round(requiredPct)));
   project.advanceReceivedPct = Math.max(0, Math.min(100, Math.round(receivedPct)));
@@ -964,6 +977,7 @@ export function receiveCrate(
 ) {
   const crate = db.crates.find((c) => c.id === crateId);
   if (!crate) throw new RuleError("Crate not found.");
+  requireAssignedInstallation(actor, requireProject(crate.projectId));
 
   crate.receivedAt = now();
   crate.receiptPhotos.push(`grn-${crate.crateCode}.jpg`);
@@ -1015,6 +1029,9 @@ export function fileTicket(
     note: string;
   }
 ) {
+  const project = requireProject(input.projectId);
+  if (actor.role === "INSTALLATION") requireAssignedInstallation(actor, project);
+  else requireFranchisee(actor, project);
   const verdict = canSubmitTicket(input);
   if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
 
@@ -1051,6 +1068,7 @@ export function triageTicket(
   decision: TicketDecision,
   cause: TicketCause
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can triage a damage or shortage report.");
   const ticket = db.tickets.find((t) => t.id === ticketId);
   if (!ticket) throw new RuleError("Ticket not found.");
   const original = db.items.find((i) => i.id === ticket.itemId);
@@ -1107,6 +1125,7 @@ export function triageTicket(
 }
 
 export function resolveTicket(actor: AppUser, ticketId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can resolve a damage or shortage report.");
   const ticket = db.tickets.find((t) => t.id === ticketId);
   if (!ticket) throw new RuleError("Ticket not found.");
   ticket.status = "RESOLVED";
@@ -1130,6 +1149,7 @@ export function addProgressLog(
   zone?: string
 ) {
   if (!photos.length) throw new RuleError("A progress update needs at least one photo.", ["IN-02"]);
+  requireAssignedInstallation(actor, requireProject(projectId));
   db.progressLogs.unshift({
     id: nextId("pl"), projectId, note, photos, by: actor.name, at: now(), zone,
   });
@@ -1139,6 +1159,7 @@ export function addProgressLog(
 
 export function updateSiteWorkStatus(actor: AppUser, projectId: string, status: SiteWorkStatus) {
   const project = requireProject(projectId);
+  requireAssignedInstallation(actor, project);
   project.siteWorkStatus = status;
   project.siteWorkStatusUpdatedAt = now();
   audit(actor, `projects/${projectId}`, "UPDATE", `Site update: ${status.replaceAll("_", " ").toLowerCase()}`);
@@ -1157,6 +1178,10 @@ export function raiseSnag(
   actor: AppUser,
   input: { projectId: string; itemId?: string; description: string; severity: SnagSeverity; photos: string[] }
 ) {
+  const project = requireProject(input.projectId);
+  if (actor.role === "INSTALLATION") requireAssignedInstallation(actor, project);
+  else if (actor.role === "VENDOR") requireFranchisee(actor, project);
+  else if (actor.role !== "ADMIN") throw new RuleError("Only the assigned site team, franchisee owner or Admin can raise a snag.");
   if (!input.description.trim()) throw new RuleError("Describe the snag.", ["IN-05"]);
   if (!input.photos.length) throw new RuleError("A photo is required.", ["IN-05"]);
 
@@ -1179,6 +1204,8 @@ export function raiseSnag(
 export function closeSnag(actor: AppUser, snagId: string) {
   const snag = db.snags.find((s) => s.id === snagId);
   if (!snag) throw new RuleError("Snag not found.");
+  if (actor.role === "INSTALLATION") requireAssignedInstallation(actor, requireProject(snag.projectId));
+  else if (actor.role !== "ADMIN") throw new RuleError("Only Admin or the assigned installation team can close a snag.");
   snag.status = "CLOSED";
   snag.closedAt = now();
   audit(actor, `snags/${snagId}`, "UPDATE", "Snag closed");
@@ -1189,6 +1216,7 @@ export function closeSnag(actor: AppUser, snagId: string) {
 /* ------------------------------------------------------------- handover */
 
 export function requestHandover(actor: AppUser, projectId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can generate the handover certificate.");
   const items = db.items.filter((i) => i.projectId === projectId);
   const snags = db.snags.filter((s) => s.projectId === projectId);
   const verdict = canRaiseHandover(items, snags);
@@ -1201,6 +1229,7 @@ export function requestHandover(actor: AppUser, projectId: string) {
 export function signHandover(actor: AppUser, projectId: string, otp: string) {
   if (otp.trim().length !== 6) throw new RuleError("Enter the 6-digit code sent to your mobile.", ["HO-02"]);
   const items = db.items.filter((i) => i.projectId === projectId);
+  requireFranchisee(actor, requireProject(projectId));
   const snags = db.snags.filter((s) => s.projectId === projectId);
   const verdict = canRaiseHandover(items, snags);
   if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
@@ -1432,6 +1461,7 @@ export function createChangeOrder(
   actor: AppUser,
   input: Pick<ChangeOrder, "projectId" | "title" | "reason" | "deltaValue">
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can create a change order.");
   const project = requireProject(input.projectId);
   if (!input.title.trim() || !input.reason.trim()) throw new RuleError("Give the variation a title and reason.");
   const order: ChangeOrder = {
@@ -1453,6 +1483,7 @@ export function decideChangeOrder(actor: AppUser, id: string, approved: boolean,
   order.clientNote = note?.trim() || undefined;
   order.decidedAt = now();
   const project = requireProject(order.projectId);
+  requireFranchisee(actor, project);
   if (approved) {
     project.approvedChangeValue = (project.approvedChangeValue ?? 0) + order.deltaValue;
     recomputeProject(project.id);
@@ -1482,6 +1513,7 @@ export function createCreditNote(actor: AppUser, invoiceId: string, amount: numb
 /* ----------------------------------------------------- stock & supplier bills */
 
 export function saveInventory(actor: AppUser, row: InventoryItem) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can manage inventory.");
   if (row.availableQty < 0 || row.reservedQty < 0 || row.reservedQty > row.availableQty) {
     throw new RuleError("Reserved quantity must be between zero and available quantity.");
   }
@@ -1511,6 +1543,9 @@ export function saveVendorBill(actor: AppUser, bill: VendorBill) {
 
 export function addDocument(actor: AppUser, doc: DocumentRecord) {
   if (!doc.name.trim()) throw new RuleError("Document name is required.");
+  const project = requireProject(doc.projectId);
+  if (actor.role === "VENDOR") requireFranchisee(actor, project);
+  else if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin or the assigned franchisee can add project documents.");
   db.documents.unshift({ ...doc, name: doc.name.trim(), addedBy: actor.name, addedAt: now() });
   audit(actor, `documents/${doc.id}`, "CREATE", doc.name);
   commit();
