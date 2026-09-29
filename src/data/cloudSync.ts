@@ -14,7 +14,6 @@ const COLLECTION = "workspaceState";
 const DOCUMENT = "default";
 let ready = false;
 let revision = 0;
-let timer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribe: (() => void) | null = null;
 
 function clean(value: unknown) {
@@ -44,25 +43,23 @@ export function connectSharedWorkspace(
 
 export function publishSharedWorkspace(data: Record<string, unknown>, report: (message: string) => void) {
   if (!firestore || !ready) return;
-  if (timer) clearTimeout(timer);
   const expectedRevision = revision;
   const payload = clean(data);
-  timer = setTimeout(() => {
-    timer = null;
-    const reference = doc(firestore, COLLECTION, DOCUMENT);
-    void runTransaction(firestore, async (transaction) => {
+  const reference = doc(firestore, COLLECTION, DOCUMENT);
+  // Write immediately. Delaying this snapshot meant a route change could let
+  // the next remote snapshot overwrite a just-completed local action.
+  void runTransaction(firestore, async (transaction) => {
       const current = await transaction.get(reference);
       const currentRevision = Number(current.data()?.revision ?? 0);
       if (currentRevision !== expectedRevision) {
         throw new Error("WORKSPACE_CONFLICT");
       }
       transaction.set(reference, { payload, updatedAt: serverTimestamp(), schemaVersion: 1, revision: currentRevision + 1 }, { merge: true });
-    }).catch((error: unknown) => {
+  }).catch((error: unknown) => {
       if (error instanceof Error && error.message === "WORKSPACE_CONFLICT") {
         report("Another user saved changes first. This screen has refreshed to protect their update; please reapply your change.");
         return;
       }
       report("Shared workspace could not be saved. Changes remain on this device.");
-    });
-  }, 250);
+  });
 }

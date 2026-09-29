@@ -169,6 +169,7 @@ export interface NewProjectInput {
   address: string;
   showroomName?: string;
   showroomGstin?: string;
+  noGstinReason?: string;
   contactName: string;
   contactPhone: string;
   /** These are supplied when Ola onboards a showroom partner. */
@@ -219,6 +220,10 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   if (actor.role === "CLIENT" && (!input.payment || input.payment.amount <= 0 || !input.payment.reference.trim())) {
     throw new RuleError("Enter the amount paid and the UTR or payment reference.");
   }
+  const stateCodes: Record<string, string> = { "Tamil Nadu": "33", Karnataka: "29", Kerala: "32", Telangana: "36", Maharashtra: "27", Delhi: "07", "Andhra Pradesh": "37", Gujarat: "24", Goa: "30", Haryana: "06", Rajasthan: "08", "Uttar Pradesh": "09", "West Bengal": "19", Punjab: "03", Odisha: "21", Bihar: "10", Assam: "18", Jharkhand: "20", "Madhya Pradesh": "23", Chhattisgarh: "22" };
+  const showroomGstin = input.showroomGstin?.trim().toUpperCase() ?? "";
+  if (!showroomGstin && !input.noGstinReason?.trim()) throw new RuleError("Enter the showroom GSTIN or give a reason why it is unavailable.");
+  if (showroomGstin && (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(showroomGstin) || (stateCodes[input.state.trim()] && !showroomGstin.startsWith(stateCodes[input.state.trim()])))) throw new RuleError("Enter a valid 15-character GSTIN matching the selected showroom state.");
 
   let franchiseeId: string | undefined;
   if (input.franchisee?.name.trim()) {
@@ -255,7 +260,8 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
       city: input.city.trim(),
       state: input.state.trim(),
       pincode: input.pincode.trim(),
-      gstin: input.showroomGstin?.trim().toUpperCase() || undefined,
+      gstin: showroomGstin || undefined,
+      noGstinReason: !showroomGstin ? input.noGstinReason?.trim() : undefined,
       contactName: input.contactName.trim(),
       contactPhone: input.contactPhone.trim(),
     },

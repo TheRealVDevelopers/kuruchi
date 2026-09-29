@@ -221,6 +221,8 @@ export interface Project {
     pincode: string;
     /** GSTIN for the franchisee showroom, used on delivery and tax documents. */
     gstin?: string;
+    /** Required explanation when a new showroom cannot provide a GSTIN. */
+    noGstinReason?: string;
     contactName: string;
     contactPhone: string;
   };

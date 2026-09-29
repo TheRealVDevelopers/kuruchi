@@ -117,6 +117,8 @@ export interface DispatchContext {
   consignment: Consignment;
   crates: Crate[];
 }
+/** Kurchi company policy: every outgoing shipment carries an e-way bill. */
+export const KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS = true;
 
 /**
  * DS-02, DS-03, DS-04, DS-05, DS-06 — everything that must be true
@@ -124,7 +126,7 @@ export interface DispatchContext {
  */
 export function canDispatch({ project, consignment, crates }: DispatchContext): RuleVerdict {
   const noPhotos = crates.filter((c) => c.photos.length === 0);
-  const needsEway = consignment.taxableValue * 1.18 > EWAY_BILL_THRESHOLD;
+  const needsEway = KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS || consignment.taxableValue * 1.18 > EWAY_BILL_THRESHOLD;
   const readiness = project.siteReadiness;
   const notReady = Object.entries(readiness)
     .filter(([, ok]) => !ok)
@@ -143,8 +145,8 @@ export function canDispatch({ project, consignment, crates }: DispatchContext): 
       !consignment.rtsCheckedAt || !consignment.boxCounts?.length
         ? { id: "DS-01", reason: "Complete the ready-to-ship box checklist first." }
         : null,
-      !consignment.challanId && !consignment.invoiceId
-        ? { id: "DS-08", reason: "Create either a delivery challan or a tax invoice before dispatch." }
+      (consignment.billingExempt ? !consignment.challanId : !consignment.invoiceId)
+        ? { id: "DS-08", reason: consignment.billingExempt ? "Replacement shipment needs its delivery challan before dispatch." : "Create the tax invoice before dispatch." }
         : null,
       consignment.deliveryMethod === "DIRECT_TRUCK" && !(consignment.driverName && consignment.driverPhone && consignment.driverLicenceNo)
         ? { id: "DS-01", reason: "Direct truck needs the driver's name, mobile number and licence number." }
@@ -152,9 +154,7 @@ export function canDispatch({ project, consignment, crates }: DispatchContext): 
       needsEway && !consignment.ewayBillNo
         ? {
             id: "DS-03",
-            reason: consignment.interState
-              ? "Inter-state movement — an e-way bill number is required."
-              : `Consignment value is over ₹${EWAY_BILL_THRESHOLD.toLocaleString("en-IN")} — an e-way bill number is required.`,
+            reason: "Kurchi policy requires an e-way bill number before every dispatch.",
           }
         : null,
       consignment.ewayBillNo && !(consignment.transporterName && consignment.vehicleNo)

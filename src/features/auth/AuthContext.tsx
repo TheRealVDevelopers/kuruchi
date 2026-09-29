@@ -35,11 +35,11 @@ function demoUserForRole(role: Role): AppUser {
   // to the first real record so the complete flow can be demonstrated without
   // creating Firebase accounts. Real sign-in uses the scoped profile instead.
   if (role === "VENDOR") {
-    const franchisee = repo.vendors("FRANCHISEE")[0];
+    const franchisee = repo.vendors("FRANCHISEE").at(-1);
     return franchisee ? { ...template, vendorId: franchisee.id } : template;
   }
   if (role === "INSTALLATION") {
-    const team = repo.vendors("INSTALLATION")[0];
+    const team = repo.vendors("INSTALLATION").at(-1);
     return team ? { ...template, teamId: team.id } : template;
   }
   return template;
