@@ -367,6 +367,8 @@ export interface Consignment {
   taxableValue: number;
   /** One partial shipment can have its own invoice and delivery challan. */
   invoiceId?: string;
+  /** Admin can ask Accounts to bill all shipment lines or only these BOQ lines. */
+  invoiceRequestItemIds?: string[];
   /** interstate movement drives e-way bill and IGST — rules DS-03, FN-02 */
   interState: boolean;
   overrideReason?: string;

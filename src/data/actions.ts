@@ -708,6 +708,22 @@ export function addCratePhoto(actor: AppUser, crateId: string, photo?: string) {
   commit();
 }
 
+/** Admin chooses exactly which packed BOQ lines Accounts should bill. */
+export function requestShipmentInvoice(actor: AppUser, consignmentId: string, itemIds: string[]) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can request a shipment invoice.");
+  const consignment = db.consignments.find((entry) => entry.id === consignmentId);
+  if (!consignment) throw new RuleError("Shipment not found.");
+  if (consignment.invoiceId) throw new RuleError("This shipment has already been invoiced.");
+  const allowed = new Set(db.crates.filter((crate) => consignment.crateIds.includes(crate.id)).flatMap((crate) => crate.itemIds));
+  const selected = [...new Set(itemIds)].filter((id) => allowed.has(id));
+  if (!selected.length) throw new RuleError("Choose at least one packed product for the invoice.");
+  consignment.invoiceRequestItemIds = selected;
+  const project = requireProject(consignment.projectId);
+  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"}.`, "/accounts");
+  audit(actor, `consignments/${consignmentId}`, "UPDATE", `Invoice requested for ${selected.length} shipment lines`);
+  commit();
+}
+
 export function updateConsignment(
   actor: AppUser,
   consignmentId: string,
@@ -1149,7 +1165,9 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   const crates = db.crates.filter((crate) => consignment.crateIds.includes(crate.id));
   const quantities = new Map<string, number>();
   crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? 0))));
-  const entries = [...quantities.entries()].map(([itemId, qty]) => ({ item: db.items.find((item) => item.id === itemId), qty }));
+  const entries = [...quantities.entries()]
+    .filter(([itemId]) => !consignment.invoiceRequestItemIds?.length || consignment.invoiceRequestItemIds.includes(itemId))
+    .map(([itemId, qty]) => ({ item: db.items.find((item) => item.id === itemId), qty }));
   if (entries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
   const lines = entries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
   const taxable = lines.reduce((sum, line) => sum + line.taxableValue, 0);

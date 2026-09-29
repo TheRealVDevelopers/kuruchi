@@ -1,7 +1,7 @@
 import type { Client, Invoice, Project } from "@/types";
 
 const money = (amount: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(amount);
-const text = (value?: string) => String(value ?? "").replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character] ?? character);
+const text = (value?: string) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character] ?? character);
 
 /** Opens a clean A4 print sheet. The browser's Print dialog can also save it as a PDF. */
 export function printTaxInvoice(invoice: Invoice, project?: Project, client?: Client | null) {
