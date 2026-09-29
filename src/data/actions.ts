@@ -91,8 +91,13 @@ export function setItemStatus(
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
   const project = requireProject(item.projectId);
+  if (actor.role !== "ADMIN" && actor.role !== "INSTALLATION") throw new RuleError("Only Kurchi Admin or the assigned installation team can update BOQ item status.");
   if (["DISPATCHED", "IN_TRANSIT", "DELIVERED_AT_SITE"].includes(to)) throw new RuleError("Use the dispatch and site-receipt workflow for movement statuses.");
-  if (["RECEIVED_OK", "RECEIVED_DAMAGED", "SHORT_SUPPLIED", "INSTALLED"].includes(to) && actor.role !== "INSTALLATION") throw new RuleError("Only Installation can record receipt or fitting.");
+  if (["RECEIVED_OK", "RECEIVED_DAMAGED", "SHORT_SUPPLIED", "INSTALLED"].includes(to)) {
+    requireAssignedInstallation(actor, project);
+  } else if (actor.role !== "ADMIN") {
+    throw new RuleError("Only Kurchi Admin can update commercial or production status.");
+  }
   if (to === "HANDED_OVER") throw new RuleError("Use the handover workflow; an item cannot be handed over from the status dropdown.");
   if (["IN_PRODUCTION", "PO_PLACED", "QC_PENDING", "READY_TO_PACK", "PACKED"].includes(to) && project.initialPayment?.status !== "VERIFIED") throw new RuleError("Accounts must verify the advance before production starts.");
 
