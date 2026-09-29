@@ -319,7 +319,7 @@ export function EwayPage() {
 }
 
 function EwayForm({ onSave, onCancel }: { onSave: (v: { no: string; transporter: string; vehicle: string }) => void; onCancel: () => void }) {
-  const [v, setV] = useState({ no: "", transporter: "TCI Freight", vehicle: "" });
+  const [v, setV] = useState({ no: "", transporter: "", vehicle: "" });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(v); }} className="rounded-md border bg-muted/30 p-3">
       <div className="grid gap-3 sm:grid-cols-3">

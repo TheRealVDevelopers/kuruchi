@@ -397,8 +397,9 @@ export function sendBoqForApproval(actor: AppUser, projectId: string) {
   if (project.status !== "DRAFT") throw new RuleError("Only a draft BOQ can be sent for approval.");
   project.status = "PENDING_APPROVAL";
   project.statusUpdatedAt = now();
-  audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to client for approval");
-  notify("CLIENT", "BOQ approval needed", `${project.site.city}: review and approve the selected BOQ.`, "/portal/approvals");
+  audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to franchisee for approval");
+  notify("VENDOR", "BOQ approval needed", `${project.site.city}: review and approve the selected BOQ.`, "/franchisee");
+  notify("CLIENT", "BOQ sent to franchisee", `${project.site.city}: your franchisee owner has been asked to review the BOQ.`, "/portal/approvals");
   commit();
 }
 
@@ -1299,6 +1300,8 @@ export function signHandover(actor: AppUser, projectId: string, otp: string) {
     if (i.status === "INSTALLED") { i.status = "HANDED_OVER"; i.statusUpdatedAt = now(); }
   });
   audit(actor, `projects/${projectId}`, "UPDATE", `Handover signed by ${actor.name}`);
+  notify("ADMIN", "Franchisee signed handover", `${requireProject(projectId).site.city}: the showroom handover has been accepted.`, `/admin/projects/${projectId}`);
+  notify("CLIENT", "Showroom handover complete", `${requireProject(projectId).site.city}: the franchisee owner accepted handover.`, `/portal/projects/${projectId}`);
   recomputeProject(projectId);
   commit();
 }

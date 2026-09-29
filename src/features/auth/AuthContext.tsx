@@ -28,6 +28,23 @@ const STORAGE_KEY = "kurchi.session";
  */
 export const AUTH_BYPASS_ENABLED = true;
 
+function demoUserForRole(role: Role): AppUser {
+  const template = repo.users().find((candidate) => candidate.role === role);
+  if (!template) throw new Error(`The temporary ${role} demo user is missing.`);
+  // Presentation mode has one role-switching identity per workspace. Map it
+  // to the first real record so the complete flow can be demonstrated without
+  // creating Firebase accounts. Real sign-in uses the scoped profile instead.
+  if (role === "VENDOR") {
+    const franchisee = repo.vendors("FRANCHISEE")[0];
+    return franchisee ? { ...template, vendorId: franchisee.id } : template;
+  }
+  if (role === "INSTALLATION") {
+    const team = repo.vendors("INSTALLATION")[0];
+    return team ? { ...template, teamId: team.id } : template;
+  }
+  return template;
+}
+
 function defaultDemoUser(): AppUser {
   const path = window.location.pathname;
   const role: Role = path.startsWith("/portal")
@@ -41,9 +58,7 @@ function defaultDemoUser(): AppUser {
           : path.startsWith("/hq")
             ? "SUPER_ADMIN"
             : "ADMIN";
-  const user = repo.users().find((candidate) => candidate.role === role);
-  if (!user) throw new Error(`The temporary ${role} demo user is missing.`);
-  return user;
+  return demoUserForRole(role);
 }
 
 /** Where each role lands after signing in. */
@@ -110,7 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       async signIn(email: string, password: string) {
         if (AUTH_BYPASS_ENABLED) {
-          const preview = repo.userByEmail(email) ?? defaultDemoUser();
+          const requested = repo.userByEmail(email);
+          const preview = requested ? demoUserForRole(requested.role) : defaultDemoUser();
           persist(preview);
           return preview;
         }
@@ -164,8 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         persist(null);
       },
       switchRole(role: Role) {
-        const next = repo.users().find((u) => u.role === role);
-        if (next) persist(next);
+        persist(demoUserForRole(role));
       },
     }),
     [user, loading]
