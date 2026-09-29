@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { FilePlus2, Printer, ShieldCheck, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo, receivablesAgeing, retentionQueue, NOW } from "@/data/repo";
@@ -355,7 +355,8 @@ export function InvoicesPage() {
   useDb();
   const { user } = useAuth();
   const run = useAction();
-  const [raising, setRaising] = useState(false);
+  const { search } = useLocation();
+  const [raising, setRaising] = useState(() => new URLSearchParams(search).get("action") === "raise");
   if (!user) return null;
 
   const invoices = repo.invoices();
