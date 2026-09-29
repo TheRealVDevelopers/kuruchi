@@ -496,6 +496,8 @@ export function updateItemPricing(
   if (actor.role !== "ADMIN") throw new RuleError("Only Admin can change BOQ pricing.");
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
+  const editable = canEditBoqInPlace(requireProject(item.projectId));
+  if (!editable.ok) throw new RuleError(editable.reasons.join(" "), editable.blockedBy);
   if (Object.values(patch).some((value) => typeof value === "number" && value < 0)) throw new RuleError("Prices and allocated costs cannot be negative.");
   Object.assign(item.pricing, patch);
   audit(actor, `items/${itemId}`, "UPDATE", `Pricing changed on ${item.name}`);
@@ -507,6 +509,9 @@ export function setItemQty(actor: AppUser, itemId: string, qty: number) {
   if (actor.role !== "ADMIN") throw new RuleError("Only Admin can change BOQ quantities.");
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
+  const editable = canEditBoqInPlace(requireProject(item.projectId));
+  if (!editable.ok) throw new RuleError(editable.reasons.join(" "), editable.blockedBy);
+  if (!Number.isInteger(qty) || qty < 1) throw new RuleError("Quantity must be a whole number of at least 1.");
   item.qty = Math.max(0, Math.round(qty));
   audit(actor, `items/${itemId}`, "UPDATE", `Quantity set to ${item.qty} on ${item.name}`);
   recomputeProject(item.projectId);
@@ -562,6 +567,7 @@ export function addBoqLine(
 }
 
 export function removeBoqLine(actor: AppUser, itemId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can remove BOQ lines.");
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
   const project = requireProject(item.projectId);

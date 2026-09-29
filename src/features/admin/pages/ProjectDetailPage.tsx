@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Camera, CheckCircle2, Circle, MapPin, Phone, Send } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, Circle, MapPin, Phone, Send, Trash2 } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo } from "@/data/repo";
 import { useDb } from "@/data/store";
@@ -95,6 +95,10 @@ export default function ProjectDetailPage() {
       cell: (i) => <StatusControl item={i} user={user} disabled={readOnly} />,
     },
     { key: "sla", header: "Waiting", cell: (i) => <SlaPill status={i.status} since={i.statusUpdatedAt} /> },
+    {
+      key: "edit", header: "Edit",
+      cell: (i) => project.status === "DRAFT" && user.role === "ADMIN" && !readOnly ? <DraftLineEditor item={i} user={user} /> : <span className="text-xs text-muted-foreground">Locked</span>,
+    },
   ];
 
   return (
@@ -654,6 +658,20 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex justify-between gap-4">
       <dt className="text-muted-foreground">{k}</dt>
       <dd className="text-right font-semibold">{v}</dd>
+    </div>
+  );
+}
+
+function DraftLineEditor({ item, user }: { item: BoqItem; user: NonNullable<ReturnType<typeof useAuth>["user"]> }) {
+  const run = useAction();
+  const [qty, setQty] = useState(String(item.qty));
+  const [price, setPrice] = useState(String(item.pricing.finalPrice));
+  return (
+    <div className="flex min-w-52 items-center gap-1.5">
+      <input aria-label={`${item.name} quantity`} value={qty} onChange={(event) => setQty(event.target.value)} inputMode="numeric" className="h-8 w-12 rounded border bg-background px-1.5 text-xs" title="Quantity" />
+      <input aria-label={`${item.name} final price`} value={price} onChange={(event) => setPrice(event.target.value)} inputMode="numeric" className="h-8 w-20 rounded border bg-background px-1.5 text-xs" title="Final unit price" />
+      <button type="button" onClick={() => run(() => { act.setItemQty(user, item.id, Number(qty)); act.updateItemPricing(user, item.id, { finalPrice: Number(price) }); }, "Draft BOQ line saved")} className="h-8 rounded border px-2 text-xs font-semibold hover:bg-muted">Save</button>
+      <button type="button" aria-label={`Remove ${item.name}`} onClick={() => run(() => act.removeBoqLine(user, item.id), "BOQ line removed")} className="grid h-8 w-8 place-items-center rounded border border-red-200 text-red-700 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
     </div>
   );
 }
