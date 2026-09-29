@@ -190,6 +190,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
 
   const client = db.clients.find((c) => c.id === input.clientId);
   if (!client) throw new RuleError("Pick a client.");
+  if (actor.role === "CLIENT" && actor.clientId !== input.clientId) throw new RuleError("Ola can only create showrooms for its own account.");
   if (actor.role === "CLIENT" && !input.franchisee?.name.trim()) {
     throw new RuleError("Add the franchisee owner before submitting the showroom.");
   }
