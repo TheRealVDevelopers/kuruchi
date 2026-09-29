@@ -525,6 +525,8 @@ export interface Invoice {
   issuedAt: string;
   dueDate: string;
   status: "ISSUED" | "PART_PAID" | "PAID" | "CREDIT_NOTED";
+  /** Verified showroom advance applied to this invoice. The original advance payment stays in the audit trail. */
+  advanceApplied?: number;
   amountReceived: number;
 }
 

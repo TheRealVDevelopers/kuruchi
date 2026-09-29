@@ -563,6 +563,7 @@ export default function ProjectDetailPage() {
                       <p className="text-xs text-muted-foreground">
                         {formatINR(inv.amountReceived)} received · {inv.status.replace(/_/g, " ").toLowerCase()}
                       </p>
+                      {inv.advanceApplied ? <p className="text-xs text-muted-foreground">Includes {formatINR(inv.advanceApplied)} verified advance</p> : null}
                     </div>
                   </li>
                 ))}

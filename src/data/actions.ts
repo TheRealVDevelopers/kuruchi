@@ -74,6 +74,13 @@ function creditedAmount(invoiceId: string) {
   return db.creditNotes.filter((note) => note.invoiceId === invoiceId).reduce((sum, note) => sum + note.amount, 0);
 }
 
+/** An advance is received once, then allocated to invoices in issue order without losing the original receipt. */
+function availableVerifiedAdvance(project: Project) {
+  const received = project.initialPayment?.status === "VERIFIED" ? project.initialPayment.amount : 0;
+  const allocated = db.invoices.filter((invoice) => invoice.projectId === project.id).reduce((sum, invoice) => sum + (invoice.advanceApplied ?? 0), 0);
+  return Math.max(0, received - allocated);
+}
+
 function notify(role: Role | "ALL", title: string, detail: string, link?: string) {
   db.notifications.unshift({
     id: nextId("ntf"), role, title, detail, link, createdAt: now(), readBy: [],
@@ -1314,12 +1321,15 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   const mode = taxMode(client.state);
   const gst = Math.round(taxable * 0.18);
   const due = new Date(NOW); due.setDate(due.getDate() + 30);
+  const netPayable = taxable + gst;
+  const advanceApplied = Math.min(netPayable, availableVerifiedAdvance(project));
   const invoice = {
     id: nextId("inv"), number: nextDocNumber("INV"), projectId: project.id, clientId: project.clientId,
     placeOfSupplyState: project.site.state, lines, taxMode: mode,
     cgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0, sgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0, igst: mode === "IGST" ? gst : 0,
-    taxableValue: taxable, total: taxable + gst, retentionPct: 0, retentionAmount: 0, netPayable: taxable + gst,
-    challanIds: [consignment.challanId], issuedAt: now(), dueDate: due.toISOString(), status: "ISSUED" as const, amountReceived: 0,
+    taxableValue: taxable, total: taxable + gst, retentionPct: 0, retentionAmount: 0, netPayable,
+    challanIds: [consignment.challanId], issuedAt: now(), dueDate: due.toISOString(), advanceApplied, amountReceived: advanceApplied,
+    status: advanceApplied >= netPayable ? "PAID" as const : advanceApplied ? "PART_PAID" as const : "ISSUED" as const,
   };
   db.invoices.unshift(invoice);
   consignment.invoiceId = invoice.id;
@@ -1398,6 +1408,8 @@ export function issueInvoice(
   const mode = taxMode(client.state);
   const gst = Math.round(taxable * 0.18);
   const retention = Math.round((taxable * project.retentionPct) / 100);
+  const netPayable = taxable + gst - retention;
+  const advanceApplied = Math.min(netPayable, availableVerifiedAdvance(project));
   const due = new Date(NOW);
   due.setDate(due.getDate() + 30);
   const lines = opts.percent === 100
@@ -1433,12 +1445,13 @@ export function issueInvoice(
     total: taxable + gst,
     retentionPct: project.retentionPct,
     retentionAmount: retention,
-    netPayable: taxable + gst - retention,
+    netPayable,
     challanIds: db.challans.filter((c) => c.projectId === projectId).map((c) => c.id),
     issuedAt: now(),
     dueDate: due.toISOString(),
-    status: "ISSUED" as const,
-    amountReceived: 0,
+    status: advanceApplied >= netPayable ? "PAID" as const : advanceApplied ? "PART_PAID" as const : "ISSUED" as const,
+    advanceApplied,
+    amountReceived: advanceApplied,
   };
   db.invoices.unshift(invoice);
 
