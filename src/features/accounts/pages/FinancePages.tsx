@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { FilePlus2, ShieldCheck, Truck, WalletCards } from "lucide-react";
+import { FilePlus2, Printer, ShieldCheck, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo, receivablesAgeing, retentionQueue, NOW } from "@/data/repo";
 import { useDb } from "@/data/store";
@@ -13,6 +13,7 @@ import { formatCompactINR, formatINR } from "@/lib/money";
 import { EWAY_BILL_THRESHOLD, taxMode } from "@/lib/rules";
 import { cn } from "@/lib/utils";
 import type { Challan, Invoice, Payment } from "@/types";
+import { printTaxInvoice } from "@/lib/printInvoice";
 
 /* ------------------------------------------------------------- dashboard */
 
@@ -378,6 +379,7 @@ export function InvoicesPage() {
     { key: "retention", header: "Retention", cell: (i) => <span className="tabular-nums text-muted-foreground">−{formatINR(i.retentionAmount)}</span> },
     { key: "net", header: "Net payable", cell: (i) => <span className="tabular-nums font-semibold">{formatINR(i.netPayable)}</span> },
     { key: "received", header: "Received", cell: (i) => <span className="tabular-nums">{formatINR(i.amountReceived)}</span> },
+    { key: "print", header: "Print", cell: (i) => <button type="button" onClick={() => printTaxInvoice(i, projects.find((project) => project.id === i.projectId), repo.clientById(i.clientId))} className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-bold"><Printer className="h-3.5 w-3.5"/> Print</button> },
     {
       key: "status", header: "Status",
       cell: (i) => {

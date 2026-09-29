@@ -1171,6 +1171,23 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   return invoice;
 }
 
+/** Accounts' one-click billing action for a ready shipment. A challan is still
+ * created first so the invoice is tied to the exact consignment and BOQ lines. */
+export function createShipmentBillingPack(actor: AppUser, consignmentId: string) {
+  if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can create shipment billing documents.");
+  const consignment = db.consignments.find((entry) => entry.id === consignmentId);
+  if (!consignment) throw new RuleError("Shipment not found.");
+  if (!consignment.rtsCheckedAt) throw new RuleError("Complete the Ready-to-Ship checklist before creating billing documents.");
+  if (!consignment.challanId) createChallan(actor, consignmentId);
+  const invoice = consignment.invoiceId
+    ? db.invoices.find((entry) => entry.id === consignment.invoiceId)
+    : issueConsignmentInvoice(actor, consignmentId);
+  if (!invoice) throw new RuleError("The shipment invoice could not be found.");
+  notify("ADMIN", "Shipment invoice created", `${requireProject(consignment.projectId).site.city}: ${invoice.number} is ready. Accounts can now complete the e-way bill details.`, `/admin/projects/${consignment.projectId}`);
+  commit();
+  return invoice;
+}
+
 /** Rule DS-03/DS-04 — Part A then Part B, before the vehicle moves. */
 export function recordEwayBill(
   actor: AppUser,
