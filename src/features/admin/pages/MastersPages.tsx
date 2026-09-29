@@ -11,6 +11,7 @@ import { ResponsiveTable, type Column } from "@/components/app/ResponsiveTable";
 import { AddButton, EditPanel, Field, NumField, SelectField, TextArea } from "@/components/app/Form";
 import { DataStatus } from "@/components/app/DataStatus";
 import { formatINR } from "@/lib/money";
+import { uploadWorkspaceFile } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
 import { functions } from "@/lib/firebase";
 import { httpsCallable } from "firebase/functions";
@@ -120,11 +121,10 @@ function ProductForm({
   onSave: (p: Product) => void; onCancel: () => void;
 }) {
   const [p, setP] = useState(product);
-  const addImage = (file?: File) => {
+  const addImage = async (file?: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setP((current) => ({ ...current, images: [...current.images, String(reader.result)] }));
-    reader.readAsDataURL(file);
+    const url = await uploadWorkspaceFile(file, "catalogue");
+    setP((current) => ({ ...current, images: [...current.images, url] }));
   };
 
   return (
