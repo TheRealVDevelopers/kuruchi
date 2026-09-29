@@ -1254,6 +1254,23 @@ export function issueInvoice(
   const retention = Math.round((taxable * project.retentionPct) / 100);
   const due = new Date(NOW);
   due.setDate(due.getDate() + 30);
+  const lines = opts.percent === 100
+    ? items.map((item) => ({
+        description: `${item.orderCategory === "SERVICE" ? "Service" : "Product"} — ${item.name}${item.spec ? ` (${item.spec})` : ""}`,
+        hsn: item.hsnCode,
+        qty: item.qty,
+        rate: item.pricing.finalPrice,
+        taxableValue: item.pricing.finalPrice * item.qty,
+        gstRate: 18,
+      }))
+    : [{
+        description: opts.description,
+        hsn: items[0]?.hsnCode ?? "9403",
+        qty: 1,
+        rate: taxable,
+        taxableValue: taxable,
+        gstRate: 18,
+      }];
 
   const invoice = {
     id: nextId("inv"),
@@ -1261,14 +1278,7 @@ export function issueInvoice(
     projectId,
     clientId: project.clientId,
     placeOfSupplyState: project.site.state,
-    lines: [{
-      description: opts.description,
-      hsn: items[0]?.hsnCode ?? "9403",
-      qty: 1,
-      rate: taxable,
-      taxableValue: taxable,
-      gstRate: 18,
-    }],
+    lines,
     taxMode: mode,
     cgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0,
     sgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0,
