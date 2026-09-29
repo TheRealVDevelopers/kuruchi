@@ -146,6 +146,22 @@ export interface Client {
   contactPhone: string;
 }
 
+export interface SellerProfile {
+  legalName: string;
+  gstin: string;
+  pan: string;
+  address: string;
+  state: string;
+  pincode: string;
+  email?: string;
+  phone?: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  ifsc: string;
+  invoicePrefix: string;
+}
+
 export interface Programme {
   id: string;
   clientId: string;

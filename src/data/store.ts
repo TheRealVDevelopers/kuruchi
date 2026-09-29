@@ -17,7 +17,7 @@ import * as seed from "./seed";
 import * as persist from "./persistence";
 import { connectSharedWorkspace, publishSharedWorkspace } from "./cloudSync";
 import type {
-  AppNotification, AppUser, AuditEntry, BoqItem, ChangeOrder, Challan, Client,
+  AppNotification, AppUser, AuditEntry, BoqItem, ChangeOrder, Challan, Client, SellerProfile,
   Comment, Consignment, Crate, CreditNote, DocumentRecord, Enquiry, InventoryItem,
   CostEntry, Invoice, Kit, Payment, Product, ProgressLog, Programme, Project, PurchaseOrder, ScheduleTask, Snag, Ticket,
   Vendor, VendorBill,
@@ -28,6 +28,7 @@ import { rollUp } from "@/lib/money";
 /* --------------------------------------------------------------- the data */
 
 export interface Db {
+  sellerProfile: SellerProfile;
   users: AppUser[];
   products: Product[];
   kits: Kit[];
@@ -66,6 +67,7 @@ function clone<T>(v: T): T {
 
 function freshFromSeed(): Db {
   return {
+    sellerProfile: { legalName: "", gstin: "", pan: "", address: "", state: "Karnataka", pincode: "", bankName: "", accountName: "", accountNumber: "", ifsc: "", invoicePrefix: "KP" },
     users: clone(seed.USERS),
     products: clone(seed.PRODUCTS),
     kits: clone(seed.KITS),
@@ -197,7 +199,7 @@ export function nextDocNumber(kind: "DC" | "INV"): string {
   const date = new Date();
   const start = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
   const fy = `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
-  return `KP/${kind === "INV" ? "I" : "D"}/${fy}/${String(highest + 1).padStart(4, "0")}`;
+  return `${db.sellerProfile.invoicePrefix || "KP"}/${kind === "INV" ? "I" : "D"}/${fy}/${String(highest + 1).padStart(4, "0")}`;
 }
 
 /**

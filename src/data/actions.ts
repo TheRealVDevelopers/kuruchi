@@ -8,7 +8,7 @@
 
 import { audit, commit, db, nextDocNumber, nextId, nextProjectCode, NOW, recomputeProject } from "./store";
 import type {
-  AppUser, BoqItem, ChangeOrder, Client, CreditNote, DocumentRecord, InventoryItem, PurchaseOrder, ScheduleTask,
+  AppUser, BoqItem, ChangeOrder, Client, CreditNote, DocumentRecord, InventoryItem, PurchaseOrder, ScheduleTask, SellerProfile,
   ItemStatus, Product, Programme, Project, Role, SnagSeverity, TicketCause,
   TicketDecision, Vendor, VendorBill, SiteWorkStatus, CostEntry, OperationalStatus,
 } from "@/types";
@@ -38,6 +38,8 @@ function requireAccounts(actor: AppUser) {
 }
 
 function requireInvoiceParties(project: Project) {
+  const seller = db.sellerProfile;
+  if (!seller.legalName || !seller.gstin || !seller.pan || !seller.address || !seller.state || !seller.pincode) throw new RuleError("Complete Kurchi’s legal seller profile before issuing a tax document.", ["FN-01"]);
   const client = db.clients.find((entry) => entry.id === project.clientId);
   if (!client?.name || !client.gstin || !client.billingAddress || !client.state) {
     throw new RuleError("Complete the customer name, GSTIN, billing address and state before issuing a tax document.", ["FN-01"]);
@@ -46,6 +48,14 @@ function requireInvoiceParties(project: Project) {
     throw new RuleError("Complete the showroom delivery address before issuing a tax document.", ["FN-01"]);
   }
   return client;
+}
+
+export function saveSellerProfile(actor: AppUser, profile: SellerProfile) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can update the legal seller profile.");
+  if (!profile.legalName.trim() || !profile.gstin.trim() || !profile.pan.trim() || !profile.address.trim() || !profile.state.trim() || !profile.pincode.trim()) throw new RuleError("Legal name, GSTIN, PAN, address, state and PIN code are required.");
+  db.sellerProfile = { ...profile, legalName: profile.legalName.trim(), gstin: profile.gstin.trim().toUpperCase(), pan: profile.pan.trim().toUpperCase(), invoicePrefix: (profile.invoicePrefix || "KP").trim().toUpperCase() };
+  audit(actor, "settings/seller-profile", "UPDATE", "Kurchi legal seller profile updated");
+  commit();
 }
 
 function creditedAmount(invoiceId: string) {

@@ -60,6 +60,7 @@ export function redactItems(items: BoqItem[], role: Role): SafeItem[] {
 /* ----------------------------------------------------------------- reads */
 
 export const repo = {
+  sellerProfile: () => db.sellerProfile,
   users: () => db.users,
   userByEmail: (email: string) =>
     db.users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase()) ?? null,
