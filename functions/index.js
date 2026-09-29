@@ -21,14 +21,12 @@ const { getAuth } = require("firebase-admin/auth");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { defineSecret } = require("firebase-functions/params");
 const { logger } = require("firebase-functions");
 
 initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 5 });
 
 const SLA_MS = 48 * 60 * 60 * 1000;
-const googleMapsApiKey = defineSecret("GOOGLE_MAPS_API_KEY");
 
 function asMillis(value) {
   if (!value) return null;
@@ -266,10 +264,10 @@ exports.getMyWorkspaceProfile = onCall(async (request) => {
 });
 
 /**
- * Optional live ETA provider. Set GOOGLE_MAPS_API_KEY in the Functions
- * runtime to use Google Routes; without it the UI keeps its safe fallback ETA.
+ * Optional live ETA provider. Until Kurchi configures a Google Routes key in
+ * the protected runtime, this deliberately returns the safe fallback ETA.
  */
-exports.estimateDelivery = onCall({ secrets: [googleMapsApiKey] }, async (request) => {
+exports.estimateDelivery = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
   const { origin, destination, method } = request.data || {};
   if (!origin || !destination) throw new HttpsError("invalid-argument", "Origin and destination are required.");
@@ -278,7 +276,7 @@ exports.estimateDelivery = onCall({ secrets: [googleMapsApiKey] }, async (reques
     const eta = new Date(); eta.setDate(eta.getDate() + fallbackDays);
     return { source: "fallback", eta: eta.toISOString(), durationHours: fallbackDays * 24 };
   };
-  const key = googleMapsApiKey.value();
+  const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) return fallback();
   try {
     const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
