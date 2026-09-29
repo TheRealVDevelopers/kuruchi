@@ -22,9 +22,7 @@ export function scopeProjects(user: AppUser | null, projects = db.projects): Pro
     case "CLIENT":
       return projects.filter((p) => p.clientId === user.clientId);
     case "INSTALLATION":
-      // Kurchi currently operates one installation team. The field app shows
-      // every active showroom; item-level status decides what can be worked on.
-      return projects;
+      return projects.filter((p) => p.installationTeamId === user.teamId);
     case "VENDOR":
       return projects.filter((p) => p.franchiseeId === user.vendorId);
     default:

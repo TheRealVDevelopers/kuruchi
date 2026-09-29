@@ -231,10 +231,10 @@ export function canMarkInstalled(item: BoqItem, tickets: Ticket[]): RuleVerdict 
           reason: `${open.length} open ${open.length === 1 ? "ticket" : "tickets"} on this item.`,
         }
       : null,
-    item.qtyReceived < item.qtyDispatched
+    item.qtyReceived < item.qty
       ? {
           id: "ST-01",
-          reason: `Short received: ${item.qtyReceived} of ${item.qtyDispatched} arrived.`,
+          reason: `Short received: ${item.qtyReceived} of ${item.qty} remaining units arrived.`,
         }
       : null,
   ]);

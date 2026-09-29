@@ -1145,6 +1145,9 @@ export function triageTicket(
 
     // The damaged units are written off; the good ones carry on.
     original.qty = Math.max(0, original.qty - ticket.qtyAffected);
+    // The original line now represents only the good, remaining units.
+    // This keeps them eligible for installation after a shortage replacement.
+    original.qtyDispatched = Math.min(original.qtyDispatched, original.qty);
     original.status = original.qtyReceived > 0 ? "RECEIVED_OK" : original.status;
   } else if (decision === "REPAIR") {
     const cost = Math.round(original.pricing.basePrice * ticket.qtyAffected * 0.3);
@@ -1334,10 +1337,13 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   const entries = [...quantities.entries()]
     .filter(([itemId]) => !consignment.invoiceRequestItemIds?.length || consignment.invoiceRequestItemIds.includes(itemId))
     .map(([itemId, qty]) => ({ item: db.items.find((item) => item.id === itemId), qty }));
-  if (entries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
-  const lines = entries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
+  const billableEntries = entries.filter(({ item }) => !item?.replacementFor);
+  if (!billableEntries.length) throw new RuleError("This replacement shipment needs only its delivery challan; the original sale has already been invoiced.");
+  if (billableEntries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
+  const lines = billableEntries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
   const taxable = lines.reduce((sum, line) => sum + line.taxableValue, 0);
-  const mode = taxMode(client.state);
+  // Bill-to may differ from the showroom. Tax follows the declared place of supply.
+  const mode = taxMode(project.site.state, db.sellerProfile.state);
   const gst = Math.round(taxable * 0.18);
   const due = new Date(NOW); due.setDate(due.getDate() + 30);
   const netPayable = taxable + gst;
@@ -1366,6 +1372,18 @@ export function createShipmentBillingPack(actor: AppUser, consignmentId: string)
   const consignment = db.consignments.find((entry) => entry.id === consignmentId);
   if (!consignment) throw new RuleError("Shipment not found.");
   if (!consignment.challanId) createChallan(actor, consignmentId);
+  const shipmentItems = db.crates
+    .filter((crate) => consignment.crateIds.includes(crate.id))
+    .flatMap((crate) => crate.itemIds)
+    .map((itemId) => db.items.find((item) => item.id === itemId))
+    .filter((item): item is BoqItem => Boolean(item));
+  if (shipmentItems.length && shipmentItems.every((item) => Boolean(item.replacementFor))) {
+    consignment.billingExempt = true;
+    audit(actor, `consignments/${consignment.id}`, "UPDATE", "Replacement shipment: delivery challan issued; no second tax invoice created");
+    notify("ADMIN", "Replacement shipment documents ready", `${requireProject(consignment.projectId).site.city}: delivery challan is ready. No second invoice is required.`, `/admin/projects/${consignment.projectId}`);
+    commit();
+    return db.challans.find((challan) => challan.id === consignment.challanId);
+  }
   const invoice = consignment.invoiceId
     ? db.invoices.find((entry) => entry.id === consignment.invoiceId)
     : issueConsignmentInvoice(actor, consignmentId);
@@ -1424,7 +1442,8 @@ export function issueInvoice(
   const taxable = Math.round((project.totals.value * opts.percent) / 100);
   const previouslyBilled = db.invoices.filter((invoice) => invoice.projectId === projectId).reduce((sum, invoice) => sum + invoice.taxableValue - creditedAmount(invoice.id), 0);
   if (previouslyBilled + taxable > project.totals.value) throw new RuleError("This would bill more than the approved BOQ value. Use a credit note or choose the remaining value.", ["FN-06"]);
-  const mode = taxMode(client.state);
+  // The tax split must use the same place of supply printed on the invoice.
+  const mode = taxMode(project.site.state, db.sellerProfile.state);
   const gst = Math.round(taxable * 0.18);
   const retention = Math.round((taxable * project.retentionPct) / 100);
   const netPayable = taxable + gst - retention;

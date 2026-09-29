@@ -218,6 +218,7 @@ export function EwayPage() {
   const [open, setOpen] = useState<string | null>(null);
   if (!user) return null;
 
+  const seller = repo.sellerProfile();
   const needing = repo.consignments().filter(
     (c) => c.status !== "DELIVERED" && (c.interState || c.taxableValue > EWAY_BILL_THRESHOLD)
   );
@@ -237,6 +238,12 @@ export function EwayPage() {
           {needing.map((c) => {
             const project = repo.projects(user).find((p) => p.id === c.projectId);
             const challan = repo.challans().find((x) => x.id === c.challanId);
+            const hsnCodes = [...new Set(
+              repo.crates().filter((crate) => c.crateIds.includes(crate.id))
+                .flatMap((crate) => crate.itemIds)
+                .map((itemId) => repo.itemById(itemId)?.hsnCode)
+                .filter(Boolean)
+            )].join(" / ") || "Not added";
             const complete = Boolean(c.ewayBillNo && c.transporterName && c.vehicleNo);
             return (
               <section key={c.id} className="rounded-lg border bg-card p-4">
@@ -260,11 +267,11 @@ export function EwayPage() {
                     <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">Part A</h4>
                     <dl className="space-y-1 text-sm">
                       <Row k="Document" v={challan?.number ?? "challan not created"} />
-                      <Row k="From GSTIN" v="29AAFCO1234M1Z5" />
+                      <Row k="From GSTIN" v={seller.gstin || "Complete seller profile"} />
                       <Row k="To state" v={project?.site.state ?? "—"} />
                       <Row k="To PIN" v={project?.site.pincode ?? "—"} />
                       <Row k="Taxable value" v={formatINR(c.taxableValue)} />
-                      <Row k="HSN" v="9401 / 9403" />
+                      <Row k="HSN" v={hsnCodes} />
                     </dl>
                   </div>
                   <div>
@@ -453,7 +460,7 @@ function RaiseInvoiceForm({
   const items = project ? repo.itemsRaw(project.id) : [];
   const taxable = Math.round((project?.totals.value ?? 0) * percent / 100);
   const tax = Math.round(taxable * 0.18);
-  const mode = project ? taxMode(project.site.state) : "CGST_SGST";
+  const mode = project ? taxMode(project.site.state, repo.sellerProfile().state) : "CGST_SGST";
   const retention = Math.round(taxable * (project?.retentionPct ?? 0) / 100);
   const fullBoq = percent === 100;
 
