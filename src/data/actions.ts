@@ -444,6 +444,36 @@ export function setOperationalStatus(actor: AppUser, projectId: string, status: 
   commit();
 }
 
+/** A deliberate pause/cancellation trail prevents a project from disappearing into an informal status change. */
+export function setProjectLifecycle(actor: AppUser, projectId: string, action: "HOLD" | "RESUME" | "CANCEL", reason: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can hold, resume or cancel a project.");
+  const project = requireProject(projectId);
+  if (!reason.trim()) throw new RuleError("Add a short reason so the team can understand this decision.");
+
+  if (action === "HOLD") {
+    if (["COMPLETED", "CLOSED", "CANCELLED"].includes(project.status)) throw new RuleError("This project can no longer be put on hold.");
+    project.status = "ON_HOLD";
+  }
+  if (action === "RESUME") {
+    if (project.status !== "ON_HOLD") throw new RuleError("Only a project on hold can be resumed.");
+    project.status = "DRAFT";
+    recomputeProject(projectId);
+  }
+  if (action === "CANCEL") {
+    if (db.consignments.some((entry) => entry.projectId === projectId && entry.status !== "READY")) throw new RuleError("A dispatched shipment exists. Resolve it before cancelling this project.");
+    if (db.invoices.some((entry) => entry.projectId === projectId && entry.status !== "CREDIT_NOTED")) throw new RuleError("An active invoice exists. Issue the required credit note before cancelling this project.");
+    project.status = "CANCELLED";
+    db.items.filter((item) => item.projectId === projectId && !["HANDED_OVER", "INSTALLED"].includes(item.status)).forEach((item) => {
+      item.status = "CANCELLED";
+      item.statusUpdatedAt = now();
+    });
+  }
+  project.statusUpdatedAt = now();
+  audit(actor, `projects/${projectId}`, "UPDATE", `Project ${action.toLowerCase()}d · ${reason.trim()}`);
+  notify("ALL", `Project ${action.toLowerCase()}d`, `${project.site.city}: ${reason.trim()}`, `/admin/projects/${projectId}`);
+  commit();
+}
+
 export function addCostEntry(
   actor: AppUser,
   input: Omit<CostEntry, "id" | "createdBy" | "createdAt">
@@ -631,6 +661,7 @@ const schedulePhases: Array<Pick<ScheduleTask, "title" | "phase">> = [
 ];
 
 export function createRolloutSchedule(actor: AppUser, projectId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can create rollout schedules.");
   const project = requireProject(projectId);
   if (db.scheduleTasks.some((task) => task.projectId === projectId)) {
     throw new RuleError("This project already has a rollout schedule.");
@@ -648,6 +679,7 @@ export function createRolloutSchedule(actor: AppUser, projectId: string) {
 }
 
 export function updateScheduleTask(actor: AppUser, taskId: string, patch: Pick<ScheduleTask, "status"> & Partial<Pick<ScheduleTask, "owner" | "note" | "plannedStart" | "plannedEnd">>) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can update rollout schedules.");
   const task = db.scheduleTasks.find((entry) => entry.id === taskId);
   if (!task) throw new RuleError("Schedule task not found.");
   const wasNotStarted = task.status === "NOT_STARTED";
@@ -659,6 +691,7 @@ export function updateScheduleTask(actor: AppUser, taskId: string, patch: Pick<S
 }
 
 export function savePurchaseOrder(actor: AppUser, order: PurchaseOrder) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can issue or change purchase orders.");
   if (!order.projectId || !order.vendorId || !order.description.trim() || order.amount <= 0) {
     throw new RuleError("Project, vendor, scope and amount are required for a purchase order.");
   }
@@ -697,6 +730,7 @@ export function savePurchaseOrder(actor: AppUser, order: PurchaseOrder) {
 
 /** Vendor confirmation makes the awarded BOQ lines available to the dispatch desk. */
 export function markPurchaseOrderReady(actor: AppUser, purchaseOrderId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can confirm a purchase order as ready.");
   const order = db.purchaseOrders.find((entry) => entry.id === purchaseOrderId);
   if (!order) throw new RuleError("Purchase order not found.");
   order.status = "RECEIVED";
@@ -720,11 +754,15 @@ export function createDispatchBatch(
   actor: AppUser,
   input: { projectId: string; allocations: Array<{ itemId: string; qty: number }>; crateCode: string }
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can create a packing batch.");
   if (!input.crateCode.trim() || !input.allocations.length) throw new RuleError("Choose at least one ready item and enter a crate code.");
   if (db.crates.some((crate) => crate.crateCode.toLowerCase() === input.crateCode.trim().toLowerCase())) throw new RuleError("This crate code already exists.");
   const items = input.allocations.map((allocation) => db.items.find((item) => item.id === allocation.itemId));
   if (items.some((item) => !item || item.projectId !== input.projectId || !["READY_TO_PACK", "PACKED"].includes(item.status) || Math.max(item.qtyReadyToPack ?? 0, item.qty) < (input.allocations.find((allocation) => allocation.itemId === item?.id)?.qty ?? 0))) {
     throw new RuleError("Only items marked ready to pack can be added to a dispatch batch.");
+  }
+  if (input.allocations.some((allocation, index) => allocation.qty !== (items[index]?.qtyReadyToPack ?? items[index]?.qty))) {
+    throw new RuleError("A shipment can contain selected BOQ lines, but each selected line must be packed in full.");
   }
   const crateId = nextId("cr");
   const consignmentId = nextId("cn");
@@ -745,6 +783,7 @@ export function createDispatchBatch(
 }
 
 export function addCratePhoto(actor: AppUser, crateId: string, photo?: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can add packing evidence.");
   const crate = db.crates.find((c) => c.id === crateId);
   if (!crate) throw new RuleError("Crate not found.");
   crate.photos.push(photo ?? `pack-${crate.crateCode}-${crate.photos.length + 1}.jpg`);
@@ -778,6 +817,7 @@ export function updateConsignment(
     driverPhone: string; driverName: string; driverLicenceNo: string; eta: string; ewayBillNo: string;
   }>
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can update shipment details.");
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
   Object.assign(c, patch);
@@ -803,6 +843,7 @@ export function completeRtsChecklist(
     driverLicenceNo?: string;
   }
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can complete the ready-to-ship checklist.");
   const consignment = db.consignments.find((entry) => entry.id === consignmentId);
   if (!consignment) throw new RuleError("Shipment not found.");
   const boxCounts = input.boxCounts.filter((count) => Number.isInteger(count) && count > 0);
@@ -839,6 +880,7 @@ export function dispatchConsignment(
   consignmentId: string,
   overrideReason?: string
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can dispatch a consignment.");
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
   const project = requireProject(c.projectId);

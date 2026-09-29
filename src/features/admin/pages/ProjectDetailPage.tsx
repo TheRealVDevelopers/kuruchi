@@ -39,6 +39,7 @@ export default function ProjectDetailPage() {
   const tab = params.get("tab") ?? "summary";
   const [comment, setComment] = useState("");
   const [override, setOverride] = useState<string | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
 
   const project = repo.projectById(user, projectId);
   if (!project || !user) {
@@ -155,6 +156,27 @@ export default function ProjectDetailPage() {
               tone={money.erosion > 0 ? "bad" : "default"}
             />
           </StatStrip>
+
+          {!readOnly && (
+            <section className="rounded-lg border bg-card p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold">Project control</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">Pause work or record a cancellation with a clear reason. This is logged for every team.</p>
+                </div>
+                <ProjectStatusBadge status={project.status} />
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} placeholder="Reason for this decision" className="min-h-11 flex-1 rounded-md border bg-background px-3 text-sm" />
+                {project.status === "ON_HOLD" ? (
+                  <button type="button" onClick={() => { const ok = run(() => act.setProjectLifecycle(user, project.id, "RESUME", lifecycleReason), "Project resumed"); if (ok) setLifecycleReason(""); }} className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground">Resume work</button>
+                ) : !["COMPLETED", "CLOSED", "CANCELLED"].includes(project.status) ? (
+                  <button type="button" onClick={() => { const ok = run(() => act.setProjectLifecycle(user, project.id, "HOLD", lifecycleReason), "Project put on hold"); if (ok) setLifecycleReason(""); }} className="min-h-11 rounded-md border px-4 text-sm font-semibold hover:bg-muted">Put on hold</button>
+                ) : null}
+                {! ["COMPLETED", "CLOSED", "CANCELLED"].includes(project.status) && <button type="button" onClick={() => { const ok = run(() => act.setProjectLifecycle(user, project.id, "CANCEL", lifecycleReason), "Project cancelled"); if (ok) setLifecycleReason(""); }} className="min-h-11 rounded-md border border-red-300 px-4 text-sm font-semibold text-red-700 hover:bg-red-50">Cancel project</button>}
+              </div>
+            </section>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-3">
             <section className="rounded-lg border bg-card p-4 lg:col-span-2">
