@@ -408,6 +408,9 @@ export function approveBoq(actor: AppUser, projectId: string) {
   db.items
     .filter((i) => i.projectId === projectId && i.status === "DRAFT")
     .forEach((i) => { i.status = "APPROVED"; i.statusUpdatedAt = now(); });
+  // Clear the commercial waiting state before deriving the operational state.
+  // Otherwise recomputeProject deliberately preserves PENDING_APPROVAL forever.
+  project.status = "DRAFT";
   project.statusUpdatedAt = now();
   if (actor.role === "VENDOR") project.franchiseeApprovedAt = now();
   audit(actor, `projects/${projectId}`, "UPDATE", "BOQ approved by client");
