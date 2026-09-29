@@ -365,6 +365,7 @@ export function sendBoqForApproval(actor: AppUser, projectId: string) {
   project.status = "PENDING_APPROVAL";
   project.statusUpdatedAt = now();
   audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to client for approval");
+  notify("CLIENT", "BOQ approval needed", `${project.site.city}: review and approve the selected BOQ.`, "/portal/approvals");
   commit();
 }
 
@@ -714,7 +715,7 @@ export function createDispatchBatch(
   if (!input.crateCode.trim() || !input.allocations.length) throw new RuleError("Choose at least one ready item and enter a crate code.");
   if (db.crates.some((crate) => crate.crateCode.toLowerCase() === input.crateCode.trim().toLowerCase())) throw new RuleError("This crate code already exists.");
   const items = input.allocations.map((allocation) => db.items.find((item) => item.id === allocation.itemId));
-  if (items.some((item) => !item || item.projectId !== input.projectId || (item.qtyReadyToPack ?? 0) < (input.allocations.find((allocation) => allocation.itemId === item?.id)?.qty ?? 0))) {
+  if (items.some((item) => !item || item.projectId !== input.projectId || !["READY_TO_PACK", "PACKED"].includes(item.status) || Math.max(item.qtyReadyToPack ?? 0, item.qty) < (input.allocations.find((allocation) => allocation.itemId === item?.id)?.qty ?? 0))) {
     throw new RuleError("Only items marked ready to pack can be added to a dispatch batch.");
   }
   const crateId = nextId("cr");
@@ -728,7 +729,7 @@ export function createDispatchBatch(
     id: consignmentId, projectId: input.projectId, crateIds: [crateId], taxableValue: items.reduce((sum, item, index) => sum + (item?.pricing.finalPrice ?? 0) * input.allocations[index].qty, 0),
     interState: project.site.state.trim().toLowerCase() !== "karnataka", status: "READY",
   });
-  items.forEach((item, index) => { if (!item) return; item.qtyReadyToPack = (item.qtyReadyToPack ?? 0) - input.allocations[index].qty; item.status = "PACKED"; item.statusUpdatedAt = now(); item.crateId = crateId; item.consignmentId = consignmentId; });
+  items.forEach((item, index) => { if (!item) return; item.qtyReadyToPack = Math.max(0, (item.qtyReadyToPack || item.qty) - input.allocations[index].qty); item.status = "PACKED"; item.statusUpdatedAt = now(); item.crateId = item.crateId ?? crateId; item.consignmentId = consignmentId; });
   audit(actor, `consignments/${consignmentId}`, "CREATE", `Packing batch ${input.crateCode.trim().toUpperCase()} created`);
   notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, "/accounts");
   recomputeProject(input.projectId);

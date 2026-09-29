@@ -231,7 +231,7 @@ export function recomputeProject(projectId: string) {
   const openTickets = db.tickets.filter((t) => t.projectId === projectId && t.status !== "RESOLVED");
   const signed = db.handoverSigned[projectId];
 
-  project.status = deriveProjectStatus(
+  const derivedStatus = deriveProjectStatus(
     items.map((i) => i.status),
     {
       onHold: project.status === "ON_HOLD" ? true : undefined,
@@ -240,6 +240,9 @@ export function recomputeProject(projectId: string) {
       handoverSigned: Boolean(signed),
     }
   );
+  // A submitted BOQ is a commercial decision waiting on Ola; item status must
+  // not silently turn it back into a draft before that decision arrives.
+  project.status = project.status === "PENDING_APPROVAL" ? "PENDING_APPROVAL" : derivedStatus;
 
   const approvedChangeValue = project.approvedChangeValue ?? 0;
   const value = money.revenue + approvedChangeValue;
