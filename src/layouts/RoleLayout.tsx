@@ -38,6 +38,7 @@ const NAV: Record<Role, NavItem[]> = {
     { to: "/admin", label: "Dashboard", icon: Home, end: true },
     { to: "/admin/projects", label: "Projects", icon: LayoutGrid },
     { to: "/admin/dispatch", label: "Delivery board", icon: Truck },
+    { to: "/admin/logistics", label: "Logistics settings", icon: SlidersHorizontal },
     { to: "/admin/tickets", label: "Damage & shortage", icon: Wrench },
     { to: "/admin/clients", label: "Ola account", icon: Building2 },
     { to: "/admin/catalogue", label: "Catalogue", icon: Package },
