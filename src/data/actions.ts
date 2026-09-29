@@ -322,6 +322,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
 export function acceptOlaShowroom(actor: AppUser, projectId: string) {
   if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can accept a new showroom.");
   const project = requireProject(projectId);
+  if (!project.initialPayment || project.initialPayment.status !== "VERIFIED") throw new RuleError("Accounts must verify the advance payment before Admin accepts this showroom.");
   if (!project.olaSubmittedAt) throw new RuleError("This showroom was not submitted by Ola.");
   if (project.adminAcceptedAt) return project;
   project.adminAcceptedAt = now();
@@ -420,6 +421,10 @@ export function setProjectAdvance(actor: AppUser, projectId: string, requiredPct
 /** The one-click business stage control. It never overwrites item-level traceability. */
 export function setOperationalStatus(actor: AppUser, projectId: string, status: OperationalStatus, details: { expectedDate?: string; note?: string } = {}) {
   const project = requireProject(projectId);
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can move a project stage.");
+  if (["PRODUCTION", "LOGISTICS", "DELIVERED", "INSTALLATION", "COMPLETED"].includes(status) && project.initialPayment?.status !== "VERIFIED") throw new RuleError("Accounts must verify the advance payment first.");
+  if (status === "DELIVERED" && !db.consignments.some((entry) => entry.projectId === projectId && entry.status === "DELIVERED")) throw new RuleError("Mark the actual consignment delivered before moving the project to Delivered.");
+  if (status === "COMPLETED" && !db.items.filter((item) => item.projectId === projectId && item.status !== "CANCELLED").every((item) => ["INSTALLED", "HANDED_OVER"].includes(item.status))) throw new RuleError("Every live BOQ item must be installed before completing the project.");
   project.operationalStatus = status;
   project.operationalStatusUpdatedAt = now();
   project.operationalExpectedDate = details.expectedDate ? new Date(details.expectedDate).toISOString() : project.operationalExpectedDate;
@@ -832,7 +837,8 @@ export function dispatchConsignment(
 
   const verdict = canDispatch({ project, consignment: c, crates });
   if (!verdict.ok) {
-    if (!overrideReason) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
+    const onlySiteReadiness = verdict.blockedBy.length === 1 && verdict.blockedBy[0] === "DS-05";
+    if (!overrideReason || !onlySiteReadiness) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
     audit(actor, `consignments/${consignmentId}`, "OVERRIDE", "Dispatched despite open gates", {
       ruleOverridden: verdict.blockedBy.join(", "),
       overrideReason,
@@ -861,11 +867,13 @@ export function dispatchConsignment(
 export function markDelivered(actor: AppUser, consignmentId: string) {
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
+  if (actor.role !== "INSTALLATION") throw new RuleError("Only the installation team can confirm site delivery.");
+  if (c.status !== "IN_TRANSIT") throw new RuleError("Mark the vehicle in transit before confirming site delivery.");
   c.status = "DELIVERED";
   c.deliveredAt = now();
   const itemIds = db.crates.filter((cr) => c.crateIds.includes(cr.id)).flatMap((cr) => cr.itemIds);
   db.items
-    .filter((i) => itemIds.includes(i.id) && i.status !== "DELIVERED_AT_SITE")
+    .filter((i) => itemIds.includes(i.id) && !["DELIVERED_AT_SITE", "RECEIVED_OK", "INSTALLED", "HANDED_OVER"].includes(i.status))
     .forEach((i) => { i.status = "DELIVERED_AT_SITE"; i.statusUpdatedAt = now(); });
   audit(actor, `consignments/${consignmentId}`, "UPDATE", "Marked delivered at site");
   recomputeProject(c.projectId);
