@@ -183,6 +183,7 @@ export interface NewProjectInput {
  * until the BOQ is deliberately sent for approval.
  */
 export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
+  if (!["ADMIN", "CLIENT"].includes(actor.role)) throw new RuleError("Only Ola or Kurchi Admin can create a showroom.");
   if (!input.city.trim()) throw new RuleError("A city is required.");
   if (!input.contactPhone.trim()) throw new RuleError("A site contact number is required.");
   if (!input.targetCompletionDate) throw new RuleError("Set a target completion date.");
@@ -377,7 +378,9 @@ export function verifyInitialPayment(actor: AppUser, projectId: string, approved
 /* ---------------------------------------------------------------- BOQ flow */
 
 export function sendBoqForApproval(actor: AppUser, projectId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can send a BOQ for franchisee approval.");
   const project = requireProject(projectId);
+  if (project.status !== "DRAFT") throw new RuleError("Only a draft BOQ can be sent for approval.");
   project.status = "PENDING_APPROVAL";
   project.statusUpdatedAt = now();
   audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to client for approval");
@@ -387,6 +390,8 @@ export function sendBoqForApproval(actor: AppUser, projectId: string) {
 
 export function approveBoq(actor: AppUser, projectId: string) {
   const project = requireProject(projectId);
+  requireFranchisee(actor, project);
+  if (project.status !== "PENDING_APPROVAL") throw new RuleError("There is no BOQ waiting for approval.");
   db.items
     .filter((i) => i.projectId === projectId && i.status === "DRAFT")
     .forEach((i) => { i.status = "APPROVED"; i.statusUpdatedAt = now(); });
@@ -399,6 +404,9 @@ export function approveBoq(actor: AppUser, projectId: string) {
 
 export function rejectBoq(actor: AppUser, projectId: string, reason: string) {
   const project = requireProject(projectId);
+  requireFranchisee(actor, project);
+  if (project.status !== "PENDING_APPROVAL") throw new RuleError("There is no BOQ waiting for approval.");
+  if (!reason.trim()) throw new RuleError("Add a reason so Kurchi knows what to revise.");
   project.status = "DRAFT";
   project.statusUpdatedAt = now();
   audit(actor, `projects/${projectId}`, "UPDATE", `BOQ rejected: ${reason}`);
@@ -412,6 +420,7 @@ export function chooseFranchiseeBoq(
   input: { mode: "STANDARD" | "MODULAR"; kitId?: string; request?: string }
 ) {
   const project = requireProject(projectId);
+  requireFranchisee(actor, project);
   if (input.mode === "MODULAR" && !input.request?.trim()) throw new RuleError("Tell Kurchi what you want to customise.");
   project.boqMode = input.mode;
   project.standardKitId = input.mode === "STANDARD" ? input.kitId : undefined;
@@ -539,6 +548,7 @@ export function addBoqLine(
   qty: number,
   zone?: string
 ) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can add BOQ lines.");
   const project = requireProject(projectId);
   const editable = canEditBoqInPlace(project);
   if (!editable.ok) throw new RuleError(editable.reasons.join(" "), editable.blockedBy);
@@ -606,6 +616,7 @@ export function saveClient(actor: AppUser, client: Client) {
 }
 
 export function saveProgramme(actor: AppUser, programme: Programme) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage programmes.");
   if (!programme.name.trim()) throw new RuleError("A programme name is required.");
   const idx = db.programmes.findIndex((p) => p.id === programme.id);
   if (idx >= 0) db.programmes[idx] = programme;
@@ -1616,6 +1627,7 @@ export function saveKit(actor: AppUser, kit: Kit) {
 }
 
 export function toggleProduct(actor: AppUser, productId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can activate or deactivate catalogue products.");
   const p = db.products.find((x) => x.id === productId);
   if (!p) return;
   p.active = !p.active;
