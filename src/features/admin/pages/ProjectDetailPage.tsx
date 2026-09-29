@@ -42,6 +42,7 @@ export default function ProjectDetailPage() {
   const [lifecycleReason, setLifecycleReason] = useState("");
   const [assignedFranchisee, setAssignedFranchisee] = useState(() => repo.projectById(user, projectId)?.franchiseeId ?? "");
   const [assignedTeam, setAssignedTeam] = useState(() => repo.projectById(user, projectId)?.installationTeamId ?? "");
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
 
   const project = repo.projectById(user, projectId);
   if (!project || !user) {
@@ -66,6 +67,7 @@ export default function ProjectDetailPage() {
   const installationTeams = repo.vendors("INSTALLATION");
 
   const boqColumns: Column<BoqItem>[] = [
+    { key: "select", header: <input aria-label="Select all BOQ items" type="checkbox" checked={items.length > 0 && selectedItemIds.length === items.length} onChange={(event) => setSelectedItemIds(event.target.checked ? items.map((item) => item.id) : [])} />, cell: (i) => <input aria-label={`Select ${i.name}`} type="checkbox" checked={selectedItemIds.includes(i.id)} onChange={() => setSelectedItemIds((current) => current.includes(i.id) ? current.filter((id) => id !== i.id) : [...current, i.id])} /> },
     {
       key: "item", header: "Item", primary: true,
       cell: (i) => i.name,
@@ -310,7 +312,7 @@ export default function ProjectDetailPage() {
           {project.status === "DRAFT" && !readOnly && (
             <AddBoqLine projectId={project.id} user={user} />
           )}
-          <BulkStatusBar items={items} user={user} disabled={readOnly} />
+          <BulkStatusBar items={items} selectedIds={selectedItemIds} onClear={() => setSelectedItemIds([])} user={user} disabled={readOnly} />
           <ResponsiveTable
             data={items}
             columns={boqColumns}

@@ -54,19 +54,25 @@ export function StatusControl({
  */
 export function BulkStatusBar({
   items,
+  selectedIds = [],
+  onClear,
   user,
   disabled,
 }: {
   items: BoqItem[];
+  selectedIds?: string[];
+  onClear?: () => void;
   user: AppUser;
   disabled?: boolean;
 }) {
   const run = useAction();
   if (disabled) return null;
 
+  const selected = items.filter((item) => selectedIds.includes(item.id));
+  const working = selected.length ? selected : items;
   // Group live items by status, keep only groups that have somewhere to go.
   const groups = new Map<ItemStatus, BoqItem[]>();
-  items.forEach((i) => {
+  working.forEach((i) => {
     if (i.status === "CANCELLED" || i.status === "HANDED_OVER") return;
     if (ITEM_TRANSITIONS[i.status].length === 0) return;
     groups.set(i.status, [...(groups.get(i.status) ?? []), i]);
@@ -78,8 +84,9 @@ export function BulkStatusBar({
     <div className="rounded-lg border bg-card p-4">
       <h3 className="font-bold">Move the line along</h3>
       <p className="mb-3 mt-0.5 text-sm text-muted-foreground">
-        Everything at the same stage, moved together.
+        {selected.length ? `${selected.length} selected line${selected.length === 1 ? "" : "s"}. Choose a valid next step.` : "Everything at the same stage, moved together."}
       </p>
+      {selected.length > 0 && <button type="button" onClick={onClear} className="mb-3 rounded-md border px-3 py-1.5 text-xs font-bold">Clear selection</button>}
       <div className="flex flex-wrap gap-2">
         {[...groups.entries()].map(([status, group]) => {
           const target = ITEM_TRANSITIONS[status][0];
@@ -87,12 +94,7 @@ export function BulkStatusBar({
             <button
               key={status}
               type="button"
-              onClick={() =>
-                run(
-                  () => act.setManyStatuses(user, group.map((i) => i.id), target),
-                  `${group.length} line${group.length === 1 ? "" : "s"} → ${ITEM_STATUS_META[target].label}`
-                )
-              }
+              onClick={() => { let detail = ""; run(() => { const result = act.setManyStatuses(user, group.map((i) => i.id), target); detail = result.notMoved.length ? `${result.moved.length} moved; ${result.notMoved.map((entry) => `${entry.name}: ${entry.reason}`).join(" · ")}` : `${result.moved.length} moved to ${ITEM_STATUS_META[target].label}`; }, "Status update complete", detail); }}
               className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-muted"
             >
               <span className={cn(
