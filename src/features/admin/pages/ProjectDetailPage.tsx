@@ -408,15 +408,7 @@ export default function ProjectDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Dispatched {formatDate(c.dispatchedAt)}
                     </p>
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        onClick={() => run(() => act.markDelivered(user, c.id), "Marked delivered at site")}
-                        className="rounded-md border px-3 py-2 text-sm font-semibold hover:bg-muted"
-                      >
-                        Mark delivered
-                      </button>
-                    )}
+                    <Link to={`/site/${project.id}`} className="rounded-md border px-3 py-2 text-sm font-semibold hover:bg-muted">Installation confirms receipt</Link>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">

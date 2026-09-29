@@ -939,6 +939,7 @@ export function markDelivered(actor: AppUser, consignmentId: string) {
 
 /** The logistics desk confirms that the vehicle has physically departed. */
 export function markInTransit(actor: AppUser, consignmentId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can mark a vehicle in transit.");
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
   if (c.status !== "DISPATCHED" && c.status !== "IN_TRANSIT") throw new RuleError("Dispatch the consignment before marking it in transit.");
