@@ -980,7 +980,7 @@ export function dispatchConsignment(
 export function markDelivered(actor: AppUser, consignmentId: string) {
   const c = db.consignments.find((x) => x.id === consignmentId);
   if (!c) throw new RuleError("Consignment not found.");
-  if (actor.role !== "INSTALLATION") throw new RuleError("Only the installation team can confirm site delivery.");
+  requireAssignedInstallation(actor, requireProject(c.projectId));
   if (c.status !== "IN_TRANSIT") throw new RuleError("Mark the vehicle in transit before confirming site delivery.");
   c.status = "DELIVERED";
   c.deliveredAt = now();
@@ -1053,6 +1053,20 @@ export function receiveCrate(
       item.status = "RECEIVED_OK";
     }
   });
+
+  // Delivery is only complete once the site has checked in every crate in the
+  // consignment. A partial receipt must stay visible as an open arrival task.
+  const consignment = db.consignments.find((entry) => entry.crateIds.includes(crate.id));
+  if (consignment) {
+    const allReceived = db.crates
+      .filter((entry) => consignment.crateIds.includes(entry.id))
+      .every((entry) => Boolean(entry.receivedAt));
+    if (allReceived && consignment.status !== "DELIVERED") {
+      consignment.status = "DELIVERED";
+      consignment.deliveredAt = now();
+      notify("ADMIN", "Shipment checked in at site", `${requireProject(consignment.projectId).site.city}: all crates in the consignment have been received.`, `/admin/projects/${consignment.projectId}`);
+    }
+  }
 
   audit(actor, `crates/${crateId}`, "UPDATE", `Receipt confirmed for ${crate.crateCode}`);
   recomputeProject(crate.projectId);
