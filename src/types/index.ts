@@ -232,6 +232,9 @@ export interface Project {
   standardKitId?: string;
   modularRequest?: string;
   franchiseeApprovedAt?: string;
+  /** Ola owns BOQ commercial approval; franchisee approval is not used. */
+  olaApprovedAt?: string;
+  olaApprovedBy?: string;
   /** Ola's payment claim is checked by Accounts before Admin can start work. */
   initialPayment?: {
     amount: number;

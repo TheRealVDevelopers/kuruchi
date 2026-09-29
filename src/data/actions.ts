@@ -49,6 +49,12 @@ function requireFranchisee(actor: AppUser, project: Project) {
   }
 }
 
+function requireOwningClient(actor: AppUser, project: Project) {
+  if (actor.role !== "CLIENT" || !actor.clientId || actor.clientId !== project.clientId) {
+    throw new RuleError("Only the Ola team that owns this showroom can approve or return its BOQ.");
+  }
+}
+
 function requireInvoiceParties(project: Project) {
   const seller = db.sellerProfile;
   if (!seller.legalName || !seller.gstin || !seller.pan || !seller.address || !seller.state || !seller.pincode) throw new RuleError("Complete Kurchi’s legal seller profile before issuing a tax document.", ["FN-01"]);
@@ -153,9 +159,13 @@ export function markItemInstalled(actor: AppUser, itemId: string) {
 
 /** Bulk move — used by the dispatch board and the BOQ table. */
 export function setManyStatuses(actor: AppUser, itemIds: string[], to: ItemStatus) {
+  const moved: string[] = [];
+  const notMoved: Array<{ itemId: string; name: string; reason: string }> = [];
   itemIds.forEach((id) => {
-    try { setItemStatus(actor, id, to); } catch { /* skip ones the machine rejects */ }
+    try { const item = setItemStatus(actor, id, to); moved.push(item.name); }
+    catch (error) { const item = db.items.find((entry) => entry.id === id); notMoved.push({ itemId: id, name: item?.name ?? id, reason: error instanceof Error ? error.message : "Could not move this item." }); }
   });
+  return { moved, notMoved };
 }
 
 /* ------------------------------------------------------ create a project */
@@ -403,15 +413,14 @@ export function sendBoqForApproval(actor: AppUser, projectId: string) {
   if (project.status !== "DRAFT") throw new RuleError("Only a draft BOQ can be sent for approval.");
   project.status = "PENDING_APPROVAL";
   project.statusUpdatedAt = now();
-  audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to franchisee for approval");
-  notify("VENDOR", "BOQ approval needed", `${project.site.city}: review and approve the selected BOQ.`, "/franchisee");
-  notify("CLIENT", "BOQ sent to franchisee", `${project.site.city}: your franchisee owner has been asked to review the BOQ.`, "/portal/approvals");
+  audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to Ola for approval");
+  notify("CLIENT", "BOQ approval needed", `${project.site.city}: review and approve the selected BOQ.`, "/portal/approvals");
   commit();
 }
 
 export function approveBoq(actor: AppUser, projectId: string) {
   const project = requireProject(projectId);
-  requireFranchisee(actor, project);
+  requireOwningClient(actor, project);
   if (project.status !== "PENDING_APPROVAL") throw new RuleError("There is no BOQ waiting for approval.");
   db.items
     .filter((i) => i.projectId === projectId && i.status === "DRAFT")
@@ -420,20 +429,21 @@ export function approveBoq(actor: AppUser, projectId: string) {
   // Otherwise recomputeProject deliberately preserves PENDING_APPROVAL forever.
   project.status = "DRAFT";
   project.statusUpdatedAt = now();
-  if (actor.role === "VENDOR") project.franchiseeApprovedAt = now();
-  audit(actor, `projects/${projectId}`, "UPDATE", "BOQ approved by client");
+  project.olaApprovedAt = now();
+  project.olaApprovedBy = actor.name;
+  audit(actor, `projects/${projectId}`, "UPDATE", `BOQ approved by Ola (${actor.name})`);
   recomputeProject(projectId);
   commit();
 }
 
 export function rejectBoq(actor: AppUser, projectId: string, reason: string) {
   const project = requireProject(projectId);
-  requireFranchisee(actor, project);
+  requireOwningClient(actor, project);
   if (project.status !== "PENDING_APPROVAL") throw new RuleError("There is no BOQ waiting for approval.");
   if (!reason.trim()) throw new RuleError("Add a reason so Kurchi knows what to revise.");
   project.status = "DRAFT";
   project.statusUpdatedAt = now();
-  audit(actor, `projects/${projectId}`, "UPDATE", `BOQ rejected: ${reason}`);
+  audit(actor, `projects/${projectId}`, "UPDATE", `BOQ returned by Ola: ${reason}`);
   commit();
 }
 
