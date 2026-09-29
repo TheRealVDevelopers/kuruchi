@@ -693,6 +693,7 @@ export function createDispatchBatch(
   });
   items.forEach((item, index) => { if (!item) return; item.qtyReadyToPack = (item.qtyReadyToPack ?? 0) - input.allocations[index].qty; item.status = "PACKED"; item.statusUpdatedAt = now(); item.crateId = crateId; item.consignmentId = consignmentId; });
   audit(actor, `consignments/${consignmentId}`, "CREATE", `Packing batch ${input.crateCode.trim().toUpperCase()} created`);
+  notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, "/accounts");
   recomputeProject(input.projectId);
   commit();
 }
@@ -1177,7 +1178,6 @@ export function createShipmentBillingPack(actor: AppUser, consignmentId: string)
   if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can create shipment billing documents.");
   const consignment = db.consignments.find((entry) => entry.id === consignmentId);
   if (!consignment) throw new RuleError("Shipment not found.");
-  if (!consignment.rtsCheckedAt) throw new RuleError("Complete the Ready-to-Ship checklist before creating billing documents.");
   if (!consignment.challanId) createChallan(actor, consignmentId);
   const invoice = consignment.invoiceId
     ? db.invoices.find((entry) => entry.id === consignment.invoiceId)
