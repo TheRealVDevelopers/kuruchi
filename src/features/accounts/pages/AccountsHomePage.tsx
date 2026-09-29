@@ -4,7 +4,7 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { repo, receivablesAgeing } from "@/data/repo";
 import { useDb } from "@/data/store";
 import { formatCompactINR, formatINR } from "@/lib/money";
-import { EWAY_BILL_THRESHOLD } from "@/lib/rules";
+import { KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS } from "@/lib/rules";
 import * as act from "@/data/actions";
 import { useAction } from "@/lib/useAction";
 import { printTaxInvoice } from "@/lib/printInvoice";
@@ -14,7 +14,7 @@ export default function AccountsHomePage() {
   const projects = repo.projects(user); const invoices = repo.invoices(); const notifications = repo.notifications(user).slice(0, 6);
   const approvals = projects.filter((p) => p.initialPayment?.status === "PENDING_VERIFICATION");
   const shipments = repo.consignments().filter((c) => c.status === "READY");
-  const eways = repo.consignments().filter((c) => c.status !== "DELIVERED" && !c.ewayBillNo && (c.interState || c.taxableValue > EWAY_BILL_THRESHOLD));
+  const eways = repo.consignments().filter((c) => c.status !== "DELIVERED" && !c.ewayBillNo && KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS);
   const openInvoices = invoices.filter((i) => i.status !== "PAID"); const outstanding = Object.values(receivablesAgeing(user)).reduce((a, b) => a + b, 0);
   const invoicesToCreate = shipments.filter((s) => !s.invoiceId && !s.billingExempt);
   const taskCount = approvals.length + invoicesToCreate.length + eways.length + openInvoices.length;

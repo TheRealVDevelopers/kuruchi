@@ -10,7 +10,7 @@ import { PageHeader, StatCard, EmptyState, StatStrip } from "@/components/app/Sh
 import { RuleTag } from "@/components/app/RuleGate";
 import { ResponsiveTable, type Column } from "@/components/app/ResponsiveTable";
 import { formatCompactINR, formatINR } from "@/lib/money";
-import { EWAY_BILL_THRESHOLD, taxMode } from "@/lib/rules";
+import { KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS, taxMode } from "@/lib/rules";
 import { cn } from "@/lib/utils";
 import type { Challan, Invoice, Payment } from "@/types";
 import { printTaxInvoice } from "@/lib/printInvoice";
@@ -32,7 +32,7 @@ export function AccountsDashboard() {
   const pendingDocs = repo.consignments().filter(
     (c) =>
       c.status === "READY" &&
-      (!c.challanId || (!c.ewayBillNo && (c.interState || c.taxableValue > EWAY_BILL_THRESHOLD)))
+      (!c.challanId || (!c.ewayBillNo && KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS))
   );
 
   return (
@@ -64,7 +64,7 @@ export function AccountsDashboard() {
         <div className="space-y-3">
           {pendingDocs.map((c) => {
             const project = projects.find((p) => p.id === c.projectId);
-            const needsEway = c.interState || c.taxableValue > EWAY_BILL_THRESHOLD;
+            const needsEway = KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS;
             return (
               <article key={c.id} className="rounded-lg border bg-card p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -93,7 +93,7 @@ export function AccountsDashboard() {
                     <li className="flex flex-wrap items-center gap-1.5">
                       <RuleTag id="DS-03" tone="stop" />
                       <span className="text-muted-foreground">
-                        {c.interState ? "Inter-state movement" : `Value over ₹${EWAY_BILL_THRESHOLD.toLocaleString("en-IN")}`} — e-way bill required.
+                        Kurchi dispatch policy — e-way bill required.
                       </span>
                     </li>
                   )}
@@ -220,7 +220,7 @@ export function EwayPage() {
 
   const seller = repo.sellerProfile();
   const needing = repo.consignments().filter(
-    (c) => c.status !== "DELIVERED" && (c.interState || c.taxableValue > EWAY_BILL_THRESHOLD)
+    (c) => c.status !== "DELIVERED" && KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS
   );
 
   return (
