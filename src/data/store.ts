@@ -145,7 +145,7 @@ export function useDb(): number {
 export function commit() {
   version += 1;
   persist.save(db);
-  publishSharedWorkspace(db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
+  publishSharedWorkspace(() => db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
   listeners.forEach((l) => l());
 }
 
@@ -332,7 +332,7 @@ if (typeof window !== "undefined") {
       // The first shared document may have been created empty. Preserve a
       // browser's existing work by making it the initial shared workspace.
       if (localHasWork && !remoteHasWork) {
-        publishSharedWorkspace(db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
+        publishSharedWorkspace(() => db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
         return;
       }
       (Object.keys(db) as Array<keyof Db>).forEach((key) => {

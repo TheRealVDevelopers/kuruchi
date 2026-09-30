@@ -14,11 +14,76 @@ const COLLECTION = "workspaceState";
 const DOCUMENT = "default";
 let ready = false;
 let revision = 0;
+let appliedRevision = 0;
+let basePayload: Record<string, unknown> | null = null;
+let pendingWrites = 0;
 let unsubscribe: (() => void) | null = null;
 let writeQueue: Promise<void> = Promise.resolve();
+let applyWorkspace: ((payload: Record<string, unknown>) => void) | null = null;
 
 function clean(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function same(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isIdArray(value: unknown): value is Array<Record<string, unknown>> {
+  return Array.isArray(value) && value.every((entry) => isPlainObject(entry) && typeof entry.id === "string");
+}
+
+/**
+ * Three-way merge a local edit onto the newest shared workspace. This keeps an
+ * unrelated change made in another browser, while a genuine same-field clash
+ * intentionally favours the local user who just saved it.
+ */
+function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
+  if (same(local, base)) return remote;
+  if (same(remote, base)) return local;
+  if (isIdArray(base) || isIdArray(local) || isIdArray(remote)) {
+    const baseRows = isIdArray(base) ? base : [];
+    const localRows = isIdArray(local) ? local : [];
+    const remoteRows = isIdArray(remote) ? remote : [];
+    const byId = (rows: Array<Record<string, unknown>>) => new Map(rows.map((row) => [row.id as string, row]));
+    const baseById = byId(baseRows);
+    const localById = byId(localRows);
+    const remoteById = byId(remoteRows);
+    const ids = [...remoteRows.map((row) => row.id as string), ...localRows.map((row) => row.id as string).filter((id) => !remoteById.has(id))];
+    return ids.flatMap((id) => {
+      const baseRow = baseById.get(id);
+      const localRow = localById.get(id);
+      const remoteRow = remoteById.get(id);
+      // A local removal made after the base snapshot wins; an unchanged local
+      // row does not resurrect something another browser removed.
+      if (baseRow && !localRow) return [];
+      if (baseRow && !remoteRow && same(localRow, baseRow)) return [];
+      if (!localRow) return remoteRow ? [remoteRow] : [];
+      if (!remoteRow) return [localRow];
+      return [mergeValue(baseRow ?? {}, localRow, remoteRow)];
+    });
+  }
+  if (isPlainObject(base) || isPlainObject(local) || isPlainObject(remote)) {
+    const baseObject = isPlainObject(base) ? base : {};
+    const localObject = isPlainObject(local) ? local : {};
+    const remoteObject = isPlainObject(remote) ? remote : {};
+    const result: Record<string, unknown> = {};
+    const keys = new Set([...Object.keys(baseObject), ...Object.keys(localObject), ...Object.keys(remoteObject)]);
+    keys.forEach((key) => {
+      const merged = mergeValue(baseObject[key], localObject[key], remoteObject[key]);
+      if (merged !== undefined) result[key] = merged;
+    });
+    return result;
+  }
+  return local;
+}
+
+function mergeWorkspace(base: Record<string, unknown>, local: Record<string, unknown>, remote: Record<string, unknown>) {
+  return clean(mergeValue(base, local, remote));
 }
 
 export function connectSharedWorkspace(
@@ -27,34 +92,68 @@ export function connectSharedWorkspace(
   report: (message: string) => void,
 ) {
   if (!firestore || unsubscribe || typeof window === "undefined") return;
+  applyWorkspace = applyRemote;
   const reference = doc(firestore, COLLECTION, DOCUMENT);
   unsubscribe = onSnapshot(reference, (snapshot) => {
     if (snapshot.exists()) {
       const payload = snapshot.data().payload;
-      revision = Number(snapshot.data().revision ?? 0);
+      const remoteRevision = Number(snapshot.data().revision ?? 0);
       ready = true;
-      if (payload && typeof payload === "object") applyRemote(payload as Record<string, unknown>);
+      if (!payload || typeof payload !== "object" || remoteRevision <= appliedRevision) return;
+
+      revision = Math.max(revision, remoteRevision);
+      // While this browser has edits waiting, an older server snapshot must not
+      // repaint its screen. The queued transaction will merge those edits with
+      // the newest server document before it writes.
+      if (pendingWrites > 0 || snapshot.metadata.hasPendingWrites) return;
+
+      const remote = clean(payload);
+      basePayload = remote;
+      appliedRevision = remoteRevision;
+      applyRemote(remote);
       return;
     }
     ready = true;
-    void setDoc(reference, { payload: clean(readLocal()), updatedAt: serverTimestamp(), schemaVersion: 1, revision: 1 })
-      .catch(() => report("Shared workspace could not be created. Changes remain on this device."));
+    const initial = clean(readLocal());
+    basePayload = initial;
+    pendingWrites += 1;
+    void setDoc(reference, { payload: initial, updatedAt: serverTimestamp(), schemaVersion: 1, revision: 1 })
+      .then(() => { revision = Math.max(revision, 1); })
+      .catch(() => report("Shared workspace could not be created. Changes remain on this device."))
+      .finally(() => { pendingWrites -= 1; });
   }, () => report("Shared workspace is unavailable. Changes remain on this device."));
 }
 
-export function publishSharedWorkspace(data: Record<string, unknown>, report: (message: string) => void) {
+export function publishSharedWorkspace(readLocal: () => Record<string, unknown>, report: (message: string) => void) {
   if (!firestore || !ready) return;
-  const payload = clean(data);
   const reference = doc(firestore, COLLECTION, DOCUMENT);
+  pendingWrites += 1;
   writeQueue = writeQueue.catch(() => undefined).then(async () => {
-    const nextRevision = await runTransaction(firestore, async (transaction) => {
+    // Read only when this queued write begins. A bulk click or rapid toggles
+    // therefore save one current workspace, not a chain of stale snapshots.
+    const local = clean(readLocal());
+    const base = clean(basePayload ?? local);
+    const result = await runTransaction(firestore, async (transaction) => {
       const current = await transaction.get(reference);
       const currentRevision = Number(current.data()?.revision ?? 0);
-      transaction.set(reference, { payload, updatedAt: serverTimestamp(), schemaVersion: 1, revision: currentRevision + 1 }, { merge: true });
-      return currentRevision + 1;
+      const remote = current.data()?.payload && typeof current.data()?.payload === "object"
+        ? clean(current.data()?.payload)
+        : base;
+      const payload = mergeWorkspace(base, local, remote);
+      const nextRevision = currentRevision + 1;
+      transaction.set(reference, { payload, updatedAt: serverTimestamp(), schemaVersion: 1, revision: nextRevision }, { merge: true });
+      return { nextRevision, payload };
     });
-    revision = nextRevision;
+    revision = Math.max(revision, result.nextRevision);
+    appliedRevision = Math.max(appliedRevision, result.nextRevision);
+    // The transaction may have retained an edit from another browser. Bring it
+    // into this tab immediately, but layer any click made while the network
+    // request was running back on top before rendering.
+    const localAfterWriteStarted = clean(readLocal());
+    const reconciledLocal = mergeWorkspace(local, localAfterWriteStarted, result.payload);
+    basePayload = result.payload;
+    if (!same(localAfterWriteStarted, reconciledLocal)) applyWorkspace?.(reconciledLocal);
   }).catch(() => {
     report("Shared workspace could not be saved. Changes remain on this device.");
-  });
+  }).finally(() => { pendingWrites -= 1; });
 }

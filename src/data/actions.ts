@@ -89,11 +89,11 @@ function notify(role: Role | "ALL", title: string, detail: string, link?: string
 
 /* ------------------------------------------------------------- item status */
 
-export function setItemStatus(
+function updateItemStatus(
   actor: AppUser,
   itemId: string,
   to: ItemStatus,
-  opts: { force?: boolean } = {}
+  opts: { force?: boolean; save?: boolean } = {}
 ) {
   const item = db.items.find((i) => i.id === itemId);
   if (!item) throw new RuleError("Item not found.");
@@ -132,8 +132,17 @@ export function setItemStatus(
 
   audit(actor, `items/${item.id}`, "STATUS_CHANGE", `${item.name}: ${from} → ${to}`);
   recomputeProject(item.projectId);
-  commit();
+  if (opts.save !== false) commit();
   return item;
+}
+
+export function setItemStatus(
+  actor: AppUser,
+  itemId: string,
+  to: ItemStatus,
+  opts: { force?: boolean } = {}
+) {
+  return updateItemStatus(actor, itemId, to, opts);
 }
 
 /**
@@ -156,9 +165,12 @@ export function setManyStatuses(actor: AppUser, itemIds: string[], to: ItemStatu
   const moved: string[] = [];
   const notMoved: Array<{ itemId: string; name: string; reason: string }> = [];
   itemIds.forEach((id) => {
-    try { const item = setItemStatus(actor, id, to); moved.push(item.name); }
+    try { const item = updateItemStatus(actor, id, to, { save: false }); moved.push(item.name); }
     catch (error) { const item = db.items.find((entry) => entry.id === id); notMoved.push({ itemId: id, name: item?.name ?? id, reason: error instanceof Error ? error.message : "Could not move this item." }); }
   });
+  // A bulk move is one user decision, so it must make one durable workspace
+  // write. Saving per row allows delayed snapshots to roll the grid backward.
+  if (moved.length > 0) commit();
   return { moved, notMoved };
 }
 
