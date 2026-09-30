@@ -71,24 +71,6 @@ export function canSeeSellingPrice(role: Role): boolean {
 
 /* ------------------------------------------------------ PR / BQ  project */
 
-/** PR-01, PR-02 — can this BOQ go to the client? */
-export function canSendForApproval(project: Project, items: BoqItem[]): RuleVerdict {
-  return fail([
-    items.length === 0
-      ? { id: "PR-01", reason: "The BOQ has no line items yet." }
-      : null,
-    items.some((i) => !i.pricing.sellingPrice)
-      ? {
-          id: "PR-02",
-          reason: `${items.filter((i) => !i.pricing.sellingPrice).length} line(s) have no selling price.`,
-        }
-      : null,
-    project.status !== "DRAFT"
-      ? { id: "PR-03", reason: "This BOQ has already been submitted." }
-      : null,
-  ]);
-}
-
 /** PR-03 — after approval, lines are read-only; changes go through a change order. */
 export function canEditBoqInPlace(project: Project): RuleVerdict {
   const locked: Project["status"][] = ["DRAFT", "PENDING_APPROVAL"];
@@ -326,8 +308,8 @@ export const RULE_INDEX: Array<{ id: string; group: string; text: string }> = [
   { id: "AC-01", group: "Access", text: "Super Admin writes are rejected except comments." },
   { id: "AC-02", group: "Access", text: "Client never receives cost, vendor, margin or internal notes." },
   { id: "AC-03", group: "Access", text: "Installation never receives any price field." },
-  { id: "PR-01", group: "Project", text: "A BOQ with no lines cannot be sent for approval." },
-  { id: "PR-02", group: "Project", text: "Every line needs a selling price before approval." },
+  { id: "PR-01", group: "Project", text: "A BOQ with no lines cannot be confirmed during showroom setup." },
+  { id: "PR-02", group: "Project", text: "Every line needs a selling price before Ola can submit payment." },
   { id: "PR-03", group: "Project", text: "An approved BOQ is read-only — use a change order." },
   { id: "PR-06", group: "Project", text: "Project status is derived from item statuses, never typed." },
   { id: "BQ-02", group: "BOQ", text: "Selling below base price warns and needs confirmation." },

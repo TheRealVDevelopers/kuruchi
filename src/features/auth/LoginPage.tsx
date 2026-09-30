@@ -129,7 +129,7 @@ export default function LoginPage() {
           </p>
           <h2 className="mt-2 text-3xl text-rail-foreground">Choose your workspace</h2>
           <p className="mt-2 text-sm leading-relaxed text-rail-muted">
-            Ola manages franchisees. Franchisees choose and approve BOQs. Kurchi teams manage production, delivery, installation and accounts.
+            Ola creates showrooms and confirms the BOQ. Kurchi teams manage payment checks, production, delivery, installation and accounts.
           </p>
 
           <div className="mt-7 space-y-5">

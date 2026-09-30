@@ -49,12 +49,6 @@ function requireFranchisee(actor: AppUser, project: Project) {
   }
 }
 
-function requireOwningClient(actor: AppUser, project: Project) {
-  if (actor.role !== "CLIENT" || !actor.clientId || actor.clientId !== project.clientId) {
-    throw new RuleError("Only the Ola team that owns this showroom can approve or return its BOQ.");
-  }
-}
-
 function requireInvoiceParties(project: Project) {
   const seller = db.sellerProfile;
   if (!seller.legalName || !seller.gstin || !seller.pan || !seller.address || !seller.state || !seller.pincode) throw new RuleError("Complete Kurchi’s legal seller profile before issuing a tax document.", ["FN-01"]);
@@ -202,9 +196,8 @@ export interface NewProjectInput {
 
 /**
  * Rule BQ-01 — applying a kit copies item, spec, default quantity and the
- * product's default base and selling prices, then lets Admin edit before
- * saving. The project lands in DRAFT so nothing is committed to the client
- * until the BOQ is deliberately sent for approval.
+ * product's default base and selling prices. Admin-created projects remain a
+ * draft, while Ola-created projects are confirmed immediately in the wizard.
  */
 export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   if (!["ADMIN", "CLIENT"].includes(actor.role)) throw new RuleError("Only Ola or Kurchi Admin can create a showroom.");
@@ -263,6 +256,10 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     programmeId: input.programmeId,
     createdByRole: actor.role,
     olaSubmittedAt: actor.role === "CLIENT" ? now() : undefined,
+    // Ola's confirmation on the showroom wizard is the only BOQ approval.
+    // There is intentionally no later approval queue for this request.
+    olaApprovedAt: actor.role === "CLIENT" ? now() : undefined,
+    olaApprovedBy: actor.role === "CLIENT" ? actor.name : undefined,
     boqMode: input.boqMode,
     standardKitId: input.boqMode === "STANDARD" ? input.kitId : undefined,
     site: {
@@ -275,7 +272,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
       contactName: input.contactName.trim(),
       contactPhone: input.contactPhone.trim(),
     },
-    status: "DRAFT",
+    status: actor.role === "CLIENT" ? "APPROVED" : "DRAFT",
     statusUpdatedAt: now(),
     startDate: now(),
     targetCompletionDate: new Date(input.targetCompletionDate).toISOString(),
@@ -319,7 +316,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
         hsnCode: product?.hsnCode ?? "",
         unit: product?.unit ?? "nos",
         qty,
-        status: "DRAFT",
+        status: actor.role === "CLIENT" ? "APPROVED" : "DRAFT",
         statusUpdatedAt: now(),
         qcAttempts: 0,
         qtyDispatched: 0,
@@ -344,8 +341,8 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     `projects/${projectId}`,
     "CREATE",
     kit
-      ? `${project.code} created from kit "${kit.name}" v${kit.version} — ${lineCount} lines`
-      : `${project.code} created from the Modular catalogue — ${lineCount} lines`
+      ? `${project.code} created and BOQ confirmed by Ola from kit "${kit.name}" v${kit.version} — ${lineCount} lines`
+      : `${project.code} created and BOQ confirmed by Ola from the Modular catalogue — ${lineCount} lines`
   );
 
   recomputeProject(projectId);
@@ -407,65 +404,32 @@ export function verifyInitialPayment(actor: AppUser, projectId: string, approved
 
 /* ---------------------------------------------------------------- BOQ flow */
 
-export function sendBoqForApproval(actor: AppUser, projectId: string) {
-  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can send a BOQ for franchisee approval.");
+/**
+ * Payment verification and Admin acceptance are the gates before production.
+ * Ola has already confirmed the BOQ in the showroom-creation wizard, so this
+ * action deliberately has no second client-approval step.
+ */
+export function releaseApprovedBoqToProduction(actor: AppUser, projectId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Kurchi Admin can release an approved BOQ to production.");
   const project = requireProject(projectId);
-  if (project.status !== "DRAFT") throw new RuleError("Only a draft BOQ can be sent for approval.");
-  project.status = "PENDING_APPROVAL";
-  project.statusUpdatedAt = now();
-  audit(actor, `projects/${projectId}`, "UPDATE", "BOQ sent to Ola for approval");
-  notify("CLIENT", "BOQ approval needed", `${project.site.city}: review and approve the selected BOQ.`, "/portal/approvals");
-  commit();
-}
-
-export function approveBoq(actor: AppUser, projectId: string) {
-  const project = requireProject(projectId);
-  requireOwningClient(actor, project);
-  if (project.status !== "PENDING_APPROVAL") throw new RuleError("There is no BOQ waiting for approval.");
-  db.items
-    .filter((i) => i.projectId === projectId && i.status === "DRAFT")
-    .forEach((i) => { i.status = "APPROVED"; i.statusUpdatedAt = now(); });
-  // Clear the commercial waiting state before deriving the operational state.
-  // Otherwise recomputeProject deliberately preserves PENDING_APPROVAL forever.
-  project.status = "DRAFT";
-  project.statusUpdatedAt = now();
-  project.olaApprovedAt = now();
-  project.olaApprovedBy = actor.name;
-  audit(actor, `projects/${projectId}`, "UPDATE", `BOQ approved by Ola (${actor.name})`);
-  recomputeProject(projectId);
-  commit();
-}
-
-export function rejectBoq(actor: AppUser, projectId: string, reason: string) {
-  const project = requireProject(projectId);
-  requireOwningClient(actor, project);
-  if (project.status !== "PENDING_APPROVAL") throw new RuleError("There is no BOQ waiting for approval.");
-  if (!reason.trim()) throw new RuleError("Add a reason so Kurchi knows what to revise.");
-  project.status = "DRAFT";
-  project.statusUpdatedAt = now();
-  audit(actor, `projects/${projectId}`, "UPDATE", `BOQ returned by Ola: ${reason}`);
-  commit();
-}
-
-/** The franchisee chooses a ready-made BOQ or asks Admin to shape a modular one. */
-export function chooseFranchiseeBoq(
-  actor: AppUser,
-  projectId: string,
-  input: { mode: "STANDARD" | "MODULAR"; kitId?: string; request?: string }
-) {
-  const project = requireProject(projectId);
-  requireFranchisee(actor, project);
-  if (input.mode === "MODULAR" && !input.request?.trim()) throw new RuleError("Tell Kurchi what you want to customise.");
-  project.boqMode = input.mode;
-  project.standardKitId = input.mode === "STANDARD" ? input.kitId : undefined;
-  project.modularRequest = input.mode === "MODULAR" ? input.request?.trim() : undefined;
-  project.statusUpdatedAt = now();
-  if (input.mode === "MODULAR") {
-    notify("ADMIN", "Modular BOQ request", `${project.site.city}: ${project.modularRequest}`, `/admin/projects/${projectId}`);
-  } else {
-    notify("ADMIN", "Standard BOQ selected", `${project.site.city} is ready for franchisee approval.`, `/admin/projects/${projectId}`);
+  if (project.olaSubmittedAt && !project.adminAcceptedAt) throw new RuleError("Accept the verified showroom before releasing it to production.");
+  if (project.olaSubmittedAt && project.initialPayment?.status !== "VERIFIED") throw new RuleError("Accounts must verify the advance payment before production starts.");
+  const items = db.items.filter((item) => item.projectId === projectId && item.status !== "CANCELLED");
+  if (!items.length) throw new RuleError("Add at least one BOQ item before production can start.");
+  if (items.some((item) => item.status === "DRAFT")) {
+    // Safely migrate any request created before the one-step Ola BOQ flow.
+    items.filter((item) => item.status === "DRAFT").forEach((item) => { item.status = "APPROVED"; item.statusUpdatedAt = now(); });
   }
-  audit(actor, `projects/${projectId}`, "UPDATE", `${input.mode.toLowerCase()} BOQ selected`);
+  const waiting = items.filter((item) => item.status === "APPROVED");
+  if (!waiting.length) throw new RuleError("This BOQ has already been released to production.");
+  waiting.forEach((item) => { item.status = "IN_PRODUCTION"; item.statusUpdatedAt = now(); });
+  project.status = "IN_PRODUCTION";
+  project.operationalStatus = "PRODUCTION";
+  project.operationalStatusUpdatedAt = now();
+  project.statusUpdatedAt = now();
+  audit(actor, `projects/${projectId}`, "UPDATE", "Approved BOQ released to production by Kurchi Admin");
+  notify("CLIENT", "Production started", `${project.site.city}: Kurchi has started production for your confirmed BOQ.`, `/portal/projects/${projectId}`);
+  recomputeProject(projectId);
   commit();
 }
 

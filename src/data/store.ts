@@ -240,9 +240,9 @@ export function recomputeProject(projectId: string) {
       handoverSigned: Boolean(signed),
     }
   );
-  // A submitted BOQ is a commercial decision waiting on Ola; item status must
-  // not silently turn it back into a draft before that decision arrives.
-  project.status = project.status === "PENDING_APPROVAL" ? "PENDING_APPROVAL" : derivedStatus;
+  // Ola confirms the BOQ while creating the showroom. Do not preserve a
+  // legacy PENDING_APPROVAL state: item status is now the single source of truth.
+  project.status = derivedStatus;
 
   const approvedChangeValue = project.approvedChangeValue ?? 0;
   const value = money.revenue + approvedChangeValue;

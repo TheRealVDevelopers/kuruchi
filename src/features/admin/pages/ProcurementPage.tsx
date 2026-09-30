@@ -54,7 +54,7 @@ export default function ProcurementPage() {
             {projects.map((entry) => <option key={entry.id} value={entry.id}>{entry.site.city} · {entry.code}</option>)}
           </select>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">Client approval is complete. Only approved BOQ items are shown below.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Ola confirmed the BOQ during showroom setup. Only confirmed BOQ items are shown below.</p>
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_25rem]">

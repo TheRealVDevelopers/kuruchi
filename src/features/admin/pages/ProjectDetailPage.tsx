@@ -14,7 +14,7 @@ import { MarginPill, MoneyField } from "@/components/app/MoneyField";
 import { RuleGate, RuleTag } from "@/components/app/RuleGate";
 import { ResponsiveTable, type Column } from "@/components/app/ResponsiveTable";
 import { InlinePhotoCapture } from "@/components/app/SiteKit";
-import { canDispatch, canRaiseFinalInvoice, canRaiseHandover, canSendForApproval, readinessLabel } from "@/lib/rules";
+import { canDispatch, canRaiseFinalInvoice, canRaiseHandover, readinessLabel } from "@/lib/rules";
 import { formatCompactINR, formatINR, itemMoney, rollUp } from "@/lib/money";
 import { projectProgress } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
@@ -191,7 +191,7 @@ export default function ProjectDetailPage() {
           {!readOnly && (
             <section className="rounded-lg border bg-card p-4">
               <h3 className="font-bold">People assigned to this showroom</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Choose the franchisee who approves the BOQ and the crew who receives and installs material.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Choose the franchisee owner and the crew who receives and installs material. Ola has already confirmed the BOQ during setup.</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
                 <select value={assignedFranchisee} onChange={(event) => setAssignedFranchisee(event.target.value)} className="min-h-11 rounded-md border bg-background px-3 text-sm"><option value="">No franchisee assigned</option>{franchisees.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select>
                 <select value={assignedTeam} onChange={(event) => setAssignedTeam(event.target.value)} className="min-h-11 rounded-md border bg-background px-3 text-sm"><option value="">No installation team assigned</option>{installationTeams.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select>
@@ -290,24 +290,22 @@ export default function ProjectDetailPage() {
       {/* ---------------------------------------------------------------- BOQ */}
       {tab === "boq" && (
         <div className="space-y-4">
-          {project.status === "DRAFT" && !readOnly && (
-            <RuleGate verdict={canSendForApproval(project, items)}>
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-                <div className="min-w-0">
-                  <p className="font-bold">This BOQ is still a draft</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    Adjust quantities and prices freely. Once the client approves it, changes need a change order — <RuleTag id="PR-03" />
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => run(() => act.sendBoqForApproval(user, project.id), "Sent to the client", "It is now in their approvals queue.")}
-                  className="shrink-0 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-                >
-                  Send for approval
-                </button>
+          {!readOnly && project.status !== "IN_PRODUCTION" && project.status !== "COMPLETED" && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
+              <div className="min-w-0">
+                <p className="font-bold">BOQ confirmed during Ola showroom setup</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  There is no second BOQ approval. After Accounts verifies the advance and you accept the showroom, release the confirmed scope to production.
+                </p>
               </div>
-            </RuleGate>
+              <button
+                type="button"
+                onClick={() => run(() => act.releaseApprovedBoqToProduction(user, project.id), "Production started", "The confirmed BOQ is now with production.")}
+                className="shrink-0 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+              >
+                Release to production
+              </button>
+            </div>
           )}
           {project.status === "DRAFT" && !readOnly && (
             <AddBoqLine projectId={project.id} user={user} />

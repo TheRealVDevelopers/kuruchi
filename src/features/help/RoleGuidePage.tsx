@@ -45,7 +45,7 @@ const guides: Record<Role, Guide> = {
     title: "How to run Operations",
     intro: "You own a project from kit selection through dispatch and installation handover. Work the queue from blocked dispatches and damage reports before starting new work.",
     first: [
-      { label: "Create or open a project", detail: "Use a BOQ kit to start a showroom, confirm quantities and pricing, then send the BOQ for client approval.", to: "/admin/projects/new" },
+      { label: "Start the confirmed showroom", detail: "After Accounts verifies Ola’s payment, accept the showroom and release its confirmed BOQ directly to production.", to: "/admin/projects" },
       { label: "Prepare dispatch", detail: "Pack into crates, add real packing evidence, complete site readiness and send Accounts the document requirements.", to: "/admin/dispatch" },
       { label: "Resolve exceptions", detail: "Triage damage and shortage tickets; choose replacement, repair, waiver or transporter claim.", to: "/admin/tickets" },
     ],
@@ -95,12 +95,12 @@ const guides: Record<Role, Guide> = {
     intro: "This is your live window into each showroom. You can see progress, delivery status, agreed scope and site updates without needing to call the project team.",
     first: [
       { label: "Open your showroom", detail: "Choose a city from My showrooms and review the progress tracker and latest site update.", to: "/portal" },
-      { label: "Review approvals", detail: "Approve or reject BOQ and change requests with clear comments so the next step is unblocked.", to: "/portal/approvals" },
+      { label: "Track your confirmed BOQ", detail: "The BOQ is confirmed while creating the showroom. Return here only if a later scope change needs your review.", to: "/portal/approvals" },
       { label: "Sign only after checking", detail: "When installation is complete and all major snags are closed, sign the handover using your OTP.", to: "/portal" },
     ],
     modules: [
       { name: "My showrooms", description: "A health view across your cities.", how: "Open a project to see current stage, delivery ETAs, scope and photos.", to: "/portal", icon: LayoutGrid },
-      { name: "Approvals", description: "BOQ and change requests waiting on you.", how: "Approve when the agreed scope is correct; reject with a clear reason if it is not.", to: "/portal/approvals", icon: ClipboardList },
+      { name: "Decisions", description: "Later scope changes waiting on you.", how: "Your original BOQ is already confirmed at showroom setup. Review only any later agreed changes.", to: "/portal/approvals", icon: ClipboardList },
       { name: "Project progress", description: "Live updates from the installation team.", how: "Use Progress for site evidence, Scope for agreed rates, Deliveries for ETA and Snags to raise an issue.", to: "/portal", icon: CheckCircle2 },
       { name: "Handover", description: "Final acceptance.", how: "Confirm the work and use the OTP only when the showroom is ready to accept.", to: "/portal", icon: FileText },
     ],
