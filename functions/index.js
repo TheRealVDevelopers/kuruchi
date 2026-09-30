@@ -18,6 +18,7 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
+const { randomBytes } = require("node:crypto");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -100,6 +101,21 @@ function requireAdmin(request) {
   if (request.auth.token.role !== "ADMIN") throw new HttpsError("permission-denied", "Only Kurchi Admin can invite users.");
 }
 
+function requireClient(request) {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  if (request.auth.token.role !== "CLIENT" || !request.auth.token.clientId) {
+    throw new HttpsError("permission-denied", "Only an authorised Ola user can invite a franchisee owner.");
+  }
+  return String(request.auth.token.clientId);
+}
+
+function temporaryPassword() {
+  // A temporary value is required by Firebase to create an email/password
+  // account. It is never shown or sent; the user sets their own password from
+  // Firebase's password-reset email.
+  return `Kp!${randomBytes(18).toString("base64url")}`;
+}
+
 /**
  * Creates or updates a real Firebase user, assigns their workspace role, and
  * stores the safe profile used by the web app. The initial Admin needs to be
@@ -110,9 +126,6 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
   const data = request.data || {};
   if (!ROLES.has(data.role)) throw new HttpsError("invalid-argument", "Choose a valid workspace role.");
   if (!data.email && !data.phoneNumber) throw new HttpsError("invalid-argument", "Provide an email address or mobile number.");
-  if (data.email && !/^\d{6}$/.test(String(data.initialPassword || ""))) {
-    throw new HttpsError("invalid-argument", "Email accounts need a unique six-digit initial password.");
-  }
   if (data.phoneNumber && !/^\+[1-9]\d{7,14}$/.test(data.phoneNumber)) {
     throw new HttpsError("invalid-argument", "Use an E.164 mobile number, for example +919876543210.");
   }
@@ -121,10 +134,10 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
   let user;
   try {
     user = data.email ? await admin.getUserByEmail(data.email.trim().toLowerCase()) : await admin.getUserByPhoneNumber(data.phoneNumber);
-    user = await admin.updateUser(user.uid, { displayName: data.name?.trim() || user.displayName, phoneNumber: data.phoneNumber || user.phoneNumber, ...(data.email ? { password: String(data.initialPassword) } : {}) });
+    user = await admin.updateUser(user.uid, { displayName: data.name?.trim() || user.displayName, phoneNumber: data.phoneNumber || user.phoneNumber, ...(data.initialPassword ? { password: String(data.initialPassword) } : {}) });
   } catch (error) {
     if (error.code !== "auth/user-not-found") throw error;
-    user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, ...(data.email ? { password: String(data.initialPassword) } : {}), displayName: data.name?.trim(), disabled: false });
+    user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, ...(data.email ? { password: String(data.initialPassword || temporaryPassword()) } : {}), displayName: data.name?.trim(), disabled: false });
   }
 
   const claims = {
@@ -147,9 +160,42 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
     phoneNumber: data.phoneNumber || user.phoneNumber || undefined,
     provisionedAt: FieldValue.serverTimestamp(),
     provisionedBy: request.auth.uid,
+    passwordSetupRequired: Boolean(data.email && !data.initialPassword),
   };
   await getFirestore().collection("workspaceProfiles").doc(user.uid).set(profile, { merge: true });
-  return { uid: user.uid, email: user.email || null, phoneNumber: user.phoneNumber || null, role: data.role };
+  return { uid: user.uid, email: user.email || null, phoneNumber: user.phoneNumber || null, role: data.role, passwordSetupRequired: Boolean(data.email && !data.initialPassword) };
+});
+
+/**
+ * Ola creates the showroom and supplies the owner details. This privileged
+ * server call creates the franchisee-only account; the browser then asks
+ * Firebase Auth to send its standard first-time password email.
+ */
+exports.inviteFranchiseeOwner = onCall(async (request) => {
+  const clientId = requireClient(request);
+  const data = request.data || {};
+  const email = String(data.email || "").trim().toLowerCase();
+  const name = String(data.name || "").trim();
+  const vendorId = String(data.vendorId || "").trim();
+  if (!name || !email || !vendorId) throw new HttpsError("invalid-argument", "Franchisee name, email and showroom assignment are required.");
+  if (data.clientId && data.clientId !== clientId) throw new HttpsError("permission-denied", "This showroom belongs to another Ola account.");
+
+  const admin = getAuth();
+  let user;
+  try {
+    user = await admin.getUserByEmail(email);
+    user = await admin.updateUser(user.uid, { displayName: name, disabled: false });
+  } catch (error) {
+    if (error.code !== "auth/user-not-found") throw error;
+    user = await admin.createUser({ email, password: temporaryPassword(), displayName: name, disabled: false });
+  }
+  await admin.setCustomUserClaims(user.uid, { role: "VENDOR", active: true, clientId, vendorId });
+  await getFirestore().collection("workspaceProfiles").doc(user.uid).set({
+    uid: user.uid, name, email, role: "VENDOR", active: true, clientId, vendorId,
+    invitedAt: FieldValue.serverTimestamp(), invitedBy: request.auth.uid,
+    passwordSetupRequired: true,
+  }, { merge: true });
+  return { uid: user.uid, email, role: "VENDOR", passwordSetupRequired: true };
 });
 
 /**

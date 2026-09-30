@@ -1723,6 +1723,16 @@ export function setUserActive(actor: AppUser, uid: string, active: boolean) {
   commit();
 }
 
+/** Keep the shared admin directory in step with a successfully provisioned Firebase account. */
+export function recordWorkspaceUser(actor: AppUser, user: AppUser) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can add a workspace user.");
+  const index = db.users.findIndex((entry) => entry.uid === user.uid);
+  if (index >= 0) db.users[index] = { ...db.users[index], ...user };
+  else db.users.push(user);
+  audit(actor, `users/${user.uid}`, "CREATE", `${user.name} added as ${user.role.replace(/_/g, " ")}`);
+  commit();
+}
+
 /* ------------------------------------------------------------ enquiries */
 
 export function addEnquiry(input: {
