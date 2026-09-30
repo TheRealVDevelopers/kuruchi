@@ -167,6 +167,40 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
 });
 
 /**
+ * One-time recovery for the deliberately shared demonstration administrator.
+ * It closes itself in Firestore immediately after the credential is restored,
+ * so it cannot become a permanent public password-reset endpoint.
+ */
+exports.repairDemoAdminAccess = onCall(async (request) => {
+  if (request.data?.activation !== "kurchi-demo-admin-restore-2026") {
+    throw new HttpsError("permission-denied", "Invalid recovery request.");
+  }
+  const firestore = getFirestore();
+  const lock = firestore.collection("workspaceSettings").doc("demoAdminRecovery");
+  await firestore.runTransaction(async (transaction) => {
+    const existing = await transaction.get(lock);
+    if (existing.exists) throw new HttpsError("failed-precondition", "The demo Admin recovery has already been completed.");
+    transaction.create(lock, { completedAt: FieldValue.serverTimestamp() });
+  });
+
+  const auth = getAuth();
+  let user;
+  try {
+    user = await auth.getUserByEmail("admin@kurchi.com");
+    user = await auth.updateUser(user.uid, { displayName: "Kurchi Admin", password: "123456", disabled: false });
+  } catch (error) {
+    if (error.code !== "auth/user-not-found") throw error;
+    user = await auth.createUser({ email: "admin@kurchi.com", displayName: "Kurchi Admin", password: "123456", disabled: false });
+  }
+  await auth.setCustomUserClaims(user.uid, { role: "ADMIN", active: true });
+  await firestore.collection("workspaceProfiles").doc(user.uid).set({
+    uid: user.uid, name: "Kurchi Admin", email: "admin@kurchi.com", role: "ADMIN", active: true,
+    restoredAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return { email: "admin@kurchi.com", role: "ADMIN" };
+});
+
+/**
  * Ola creates the showroom and supplies the owner details. This privileged
  * server call creates the franchisee-only account; the browser then asks
  * Firebase Auth to send its standard first-time password email.
