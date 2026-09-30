@@ -110,6 +110,9 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
   const data = request.data || {};
   if (!ROLES.has(data.role)) throw new HttpsError("invalid-argument", "Choose a valid workspace role.");
   if (!data.email && !data.phoneNumber) throw new HttpsError("invalid-argument", "Provide an email address or mobile number.");
+  if (data.email && !/^\d{6}$/.test(String(data.initialPassword || ""))) {
+    throw new HttpsError("invalid-argument", "Email accounts need a unique six-digit initial password.");
+  }
   if (data.phoneNumber && !/^\+[1-9]\d{7,14}$/.test(data.phoneNumber)) {
     throw new HttpsError("invalid-argument", "Use an E.164 mobile number, for example +919876543210.");
   }
@@ -118,10 +121,10 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
   let user;
   try {
     user = data.email ? await admin.getUserByEmail(data.email.trim().toLowerCase()) : await admin.getUserByPhoneNumber(data.phoneNumber);
-    user = await admin.updateUser(user.uid, { displayName: data.name?.trim() || user.displayName, phoneNumber: data.phoneNumber || user.phoneNumber });
+    user = await admin.updateUser(user.uid, { displayName: data.name?.trim() || user.displayName, phoneNumber: data.phoneNumber || user.phoneNumber, ...(data.email ? { password: String(data.initialPassword) } : {}) });
   } catch (error) {
     if (error.code !== "auth/user-not-found") throw error;
-    user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, displayName: data.name?.trim(), disabled: false });
+    user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, ...(data.email ? { password: String(data.initialPassword) } : {}), displayName: data.name?.trim(), disabled: false });
   }
 
   const claims = {
@@ -189,12 +192,12 @@ exports.bootstrapDemoUsers = onCall(async (request) => {
   }
 
   const accounts = [
-    { email: "admin@kurchi.com", name: "Kurchi Admin", role: "ADMIN" },
-    { email: "superadmin@kurchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN" },
-    { email: "installation@kurchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team" },
-    { email: "accounts@kurchi.com", name: "Accounts Team", role: "ACCOUNTS" },
-    { email: "ola@kurchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola" },
-    { email: "franchisee@kurchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee" },
+    { email: "admin@kurchi.com", name: "Kurchi Admin", role: "ADMIN", password: "123456" },
+    { email: "superadmin@kurchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN", password: "123457" },
+    { email: "installation@kurchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team", password: "123458" },
+    { email: "accounts@kurchi.com", name: "Accounts Team", role: "ACCOUNTS", password: "123459" },
+    { email: "ola@kurchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola", password: "123460" },
+    { email: "franchisee@kurchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee", password: "123461" },
   ];
 
   const auth = getAuth();
@@ -203,10 +206,10 @@ exports.bootstrapDemoUsers = onCall(async (request) => {
     let user;
     try {
       user = await auth.getUserByEmail(account.email);
-      user = await auth.updateUser(user.uid, { displayName: account.name, password: "123456", disabled: false });
+      user = await auth.updateUser(user.uid, { displayName: account.name, password: account.password, disabled: false });
     } catch (error) {
       if (error.code !== "auth/user-not-found") throw error;
-      user = await auth.createUser({ email: account.email, password: "123456", displayName: account.name, disabled: false });
+      user = await auth.createUser({ email: account.email, password: account.password, displayName: account.name, disabled: false });
     }
 
     const claims = { role: account.role, active: true, clientId: account.clientId || null, teamId: account.teamId || null };

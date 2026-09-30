@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { AppUser, Role } from "@/types";
-import { repo } from "@/data/repo";
 import { auth, db, isFirebaseConfigured } from "@/lib/firebase";
 import { clearPhoneOtp, confirmPhoneOtp, sendPhoneOtp } from "@/lib/firebaseAuth";
 import { doc, getDoc } from "firebase/firestore";
@@ -13,53 +12,14 @@ interface AuthState {
   sendOtp: (phone: string, recaptchaContainerId: string) => Promise<void>;
   confirmOtp: (code: string) => Promise<AppUser>;
   signOut: () => void;
-  /** demo convenience — jump between roles without five sets of credentials */
-  switchRole: (role: Role) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
 const STORAGE_KEY = "kurchi.session";
 
-/**
- * Temporary presentation mode. The app opens as Kurchi Admin without asking
- * for credentials; role switching in the top bar remains available for demos.
- * Set this to false before inviting real users or enabling production access.
- */
-export const AUTH_BYPASS_ENABLED = true;
-
-function demoUserForRole(role: Role): AppUser {
-  const template = repo.users().find((candidate) => candidate.role === role);
-  if (!template) throw new Error(`The temporary ${role} demo user is missing.`);
-  // Presentation mode has one role-switching identity per workspace. Map it
-  // to the first real record so the complete flow can be demonstrated without
-  // creating Firebase accounts. Real sign-in uses the scoped profile instead.
-  if (role === "VENDOR") {
-    const franchisee = repo.vendors("FRANCHISEE").at(-1);
-    return franchisee ? { ...template, vendorId: franchisee.id } : template;
-  }
-  if (role === "INSTALLATION") {
-    const team = repo.vendors("INSTALLATION").at(-1);
-    return team ? { ...template, teamId: team.id } : template;
-  }
-  return template;
-}
-
-function defaultDemoUser(): AppUser {
-  const path = window.location.pathname;
-  const role: Role = path.startsWith("/portal")
-    ? "CLIENT"
-    : path.startsWith("/franchisee")
-      ? "VENDOR"
-      : path.startsWith("/site")
-        ? "INSTALLATION"
-        : path.startsWith("/accounts")
-          ? "ACCOUNTS"
-          : path.startsWith("/hq")
-            ? "SUPER_ADMIN"
-            : "ADMIN";
-  return demoUserForRole(role);
-}
+/** Real Firebase authentication is mandatory for every workspace route. */
+export const AUTH_BYPASS_ENABLED = false;
 
 /** Where each role lands after signing in. */
 export const HOME_ROUTE: Record<Role, string> = {
@@ -76,37 +36,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (AUTH_BYPASS_ENABLED) {
-      persist(defaultDemoUser());
-      setLoading(false);
-      return;
-    }
-    if (auth) {
+    if (auth && isFirebaseConfigured) {
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        if (!firebaseUser) return;
-        const profile = await firebaseProfile(firebaseUser.uid, firebaseUser.email ?? undefined);
-        if (profile) persist(profile);
+        try {
+          if (!firebaseUser) {
+            persist(null);
+            return;
+          }
+          const profile = await firebaseProfile(firebaseUser.uid);
+          if (!profile || !profile.active) {
+            await firebaseSignOut(auth);
+            persist(null);
+            return;
+          }
+          persist(profile);
+        } finally {
+          setLoading(false);
+        }
       });
       return unsubscribe;
-    }
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as { email: string };
-        setUser(repo.userByEmail(saved.email));
-      }
-    } catch {
-      // private window, blocked storage — start signed out
     }
     setLoading(false);
   }, []);
 
-  async function firebaseProfile(uid: string, email?: string): Promise<AppUser | null> {
+  async function firebaseProfile(uid: string): Promise<AppUser | null> {
     if (db) {
       const snapshot = await getDoc(doc(db, "workspaceProfiles", uid));
       if (snapshot.exists()) return snapshot.data() as AppUser;
     }
-    return email ? repo.userByEmail(email) ?? null : null;
+    return null;
   }
 
   function persist(next: AppUser | null) {
@@ -124,45 +82,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       async signIn(email: string, password: string) {
-        if (AUTH_BYPASS_ENABLED) {
-          const requested = repo.userByEmail(email);
-          const preview = requested ? demoUserForRole(requested.role) : defaultDemoUser();
-          persist(preview);
-          return preview;
+        if (!auth || !isFirebaseConfigured) throw new Error("Firebase Authentication is not configured for this deployment.");
+        const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        const profile = await firebaseProfile(credential.user.uid);
+        if (!profile || !profile.active) {
+          await firebaseSignOut(auth);
+          throw new Error("This Firebase account has not been given an active Kurchi workspace role yet.");
         }
-        if (auth && isFirebaseConfigured) {
-          try {
-            const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-            const profile = await firebaseProfile(credential.user.uid, credential.user.email ?? undefined);
-            if (!profile) {
-              await firebaseSignOut(auth);
-              throw new Error("This Firebase account has not been given a Kurchi workspace role yet.");
-            }
-            persist(profile);
-            return profile;
-          } catch (error) {
-            const preview = repo.userByEmail(email);
-            if (!preview || !password) throw error;
-            // Keep the public prototype usable while real accounts are invited.
-            persist(preview);
-            return preview;
-          }
-        }
-        const found = repo.userByEmail(email);
-        if (!found) throw new Error("No account for that email address.");
-        if (!found.active) throw new Error("This account has been deactivated.");
-        if (!password) throw new Error("Enter your password.");
-        persist(found);
-        return found;
+        persist(profile);
+        return profile;
       },
       async sendOtp(phone, recaptchaContainerId) {
-        if (AUTH_BYPASS_ENABLED) throw new Error("Sign-in is temporarily disabled for this demo.");
         await sendPhoneOtp(phone, recaptchaContainerId);
       },
       async confirmOtp(code) {
-        if (AUTH_BYPASS_ENABLED) throw new Error("Sign-in is temporarily disabled for this demo.");
         const credential = await confirmPhoneOtp(code);
-        const profile = await firebaseProfile(credential.user.uid, credential.user.email ?? undefined);
+        const profile = await firebaseProfile(credential.user.uid);
         if (!profile) {
           await firebaseSignOut(auth!);
           throw new Error("This phone number has not been invited to a Kurchi workspace yet.");
@@ -171,16 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return profile;
       },
       signOut() {
-        if (AUTH_BYPASS_ENABLED) {
-          persist(defaultDemoUser());
-          return;
-        }
         clearPhoneOtp();
         if (auth) void firebaseSignOut(auth);
         persist(null);
-      },
-      switchRole(role: Role) {
-        persist(demoUserForRole(role));
       },
     }),
     [user, loading]

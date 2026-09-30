@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@/types";
-import { ROLES } from "@/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/AuthContext";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -102,7 +101,7 @@ const ROLE_HELP: Record<Role, string> = {
 
 export default function RoleLayout() {
   useDb();
-  const { user, signOut, switchRole } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -215,22 +214,6 @@ export default function RoleLayout() {
               </button>
               {notificationsOpen && <div className="absolute right-0 top-11 z-50 w-80 rounded-lg border bg-card p-2 shadow-xl"><p className="px-2 pb-2 text-sm font-bold">Notifications</p>{notifications.length === 0 ? <p className="px-2 py-4 text-sm text-muted-foreground">You are up to date.</p> : <div className="max-h-80 space-y-1 overflow-y-auto">{notifications.slice(0, 12).map((notification) => <Link key={notification.id} to={notification.link ?? ROLE_HOME[user.role]} onClick={() => setNotificationsOpen(false)} className="block rounded-md px-2 py-2 hover:bg-muted"><p className="text-sm font-semibold">{notification.title}</p><p className="mt-0.5 text-xs text-muted-foreground">{notification.detail}</p></Link>)}</div>}</div>}
             </div>
-            {/* Demo role switcher stays available but no longer competes with daily work. */}
-            <select
-              id="role-switcher"
-              value={user.role}
-              onChange={(e) => {
-                const role = e.target.value as Role;
-                switchRole(role);
-                navigate(ROLE_HOME[role]);
-              }}
-              aria-label="Switch demo role"
-              className="hidden max-w-[9.5rem] rounded-xl border bg-background px-2 py-2 text-sm font-medium xl:block"
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{ROLE_META[r].label}</option>
-              ))}
-            </select>
           </div>
         </div>
       </header>

@@ -2,32 +2,6 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, KeyRound, Smartphone } from "lucide-react";
 import { HOME_ROUTE, useAuth } from "./AuthContext";
-import { repo } from "@/data/repo";
-import { cn } from "@/lib/utils";
-
-const ROLE_BLURB: Record<string, string> = {
-  SUPER_ADMIN: "Everything, read-only",
-  ADMIN: "Runs operations",
-  INSTALLATION: "Site crew, phone-first",
-  ACCOUNTS: "GST & billing",
-  CLIENT: "Ola rollout team",
-  VENDOR: "Franchisee owner",
-};
-
-const ACCESS_LABEL: Record<string, string> = {
-  CLIENT: "Ola login",
-  VENDOR: "Franchisee login",
-  ADMIN: "Kurchi login · Admin",
-  ACCOUNTS: "Kurchi login · Accounts",
-  INSTALLATION: "Kurchi login · Installation",
-  SUPER_ADMIN: "Kurchi login · Management",
-};
-
-const DEMO_GROUPS = [
-  { title: "Ola", roles: ["CLIENT"] },
-  { title: "Franchisee", roles: ["VENDOR"] },
-  { title: "Kurchi team", roles: ["ADMIN", "INSTALLATION", "ACCOUNTS", "SUPER_ADMIN"] },
-];
 
 export default function LoginPage() {
   const { user, signIn, sendOtp, confirmOtp } = useAuth();
@@ -121,51 +95,19 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* --------------------------------------------- demo role picker */}
+      {/* ---------------------------------------------- access explainer */}
       <div className="flex items-center justify-center bg-rail px-5 py-12 text-rail-foreground sm:px-10">
         <div className="w-full max-w-lg">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-rail-muted">
-            Demo access — choose a login
-          </p>
-          <h2 className="mt-2 text-3xl text-rail-foreground">Choose your workspace</h2>
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-rail-muted">Secure workspace access</p>
+          <h2 className="mt-2 text-3xl text-rail-foreground">One login. One role.</h2>
           <p className="mt-2 text-sm leading-relaxed text-rail-muted">
-            Ola creates showrooms and confirms the BOQ. Kurchi teams manage payment checks, production, delivery, installation and accounts.
+            Your account opens only the workspace assigned by Kurchi. There is no role switcher or sample-account access.
           </p>
-
-          <div className="mt-7 space-y-5">
-            {DEMO_GROUPS.map((group) => <section key={group.title}>
-              <p className="mb-2 text-xs font-bold uppercase tracking-[.14em] text-rail-muted">{group.title}</p>
-              <ul className="space-y-2">
-              {repo.users().filter((u) => group.roles.includes(u.role)).map((u) => (
-              <li key={u.uid}>
-                <button
-                  type="button"
-                  onClick={() => { setEmail(u.email); setPassword("demo"); }}
-                  className={cn(
-                    "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-rail-border bg-rail-hover px-4 py-3 text-left transition-colors",
-                    "hover:border-primary/60",
-                    email === u.email && "border-primary ring-1 ring-primary"
-                  )}
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-rail-foreground">
-                      {u.name}
-                    </span>
-                    <span className="block truncate text-xs text-rail-muted">
-                      {ACCESS_LABEL[u.role]} · {ROLE_BLURB[u.role]}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[11px] text-rail-muted">{u.email.split("@")[0]}</span>
-                </button>
-              </li>
-              ))}
-              </ul>
-            </section>)}
+          <div className="mt-7 space-y-3">
+            <section className="rounded-2xl border border-rail-border bg-rail-hover p-4"><p className="font-bold text-rail-foreground">Ola &amp; Franchisee</p><p className="mt-1 text-sm text-rail-muted">See only your showrooms, selected BOQ, delivery documents and handover.</p></section>
+            <section className="rounded-2xl border border-rail-border bg-rail-hover p-4"><p className="font-bold text-rail-foreground">Kurchi teams</p><p className="mt-1 text-sm text-rail-muted">Admin, Accounts and Installation each receive their own operational workspace.</p></section>
           </div>
-
-          <p className="mt-5 text-xs leading-relaxed text-rail-muted">
-            This is a safe preview with sample roles and local sample data. Any password works.
-          </p>
+          <p className="mt-5 text-xs leading-relaxed text-rail-muted">Need access? Ask a Kurchi Admin to create your account from Admin → Users. Mobile users can sign in using OTP after their number is added.</p>
         </div>
       </div>
     </div>

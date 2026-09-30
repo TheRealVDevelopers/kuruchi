@@ -75,10 +75,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Temporary shared demo workspace while authentication is deliberately
-    // bypassed. Replace this with role-scoped rules before real client use.
+    // The shared operational cache is only available after Firebase sign-in.
+    // Role-sensitive views are additionally filtered in the application.
     match /workspaceState/{id} {
-      allow read, write: if id == 'default';
+      allow read, write: if signedIn() && id == 'default';
     }
 
     match /notifications/{id} {

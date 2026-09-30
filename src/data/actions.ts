@@ -836,8 +836,8 @@ export function addCratePhoto(actor: AppUser, crateId: string, photo?: string) {
   commit();
 }
 
-/** Admin chooses exactly which packed BOQ lines Accounts should bill. */
-export function requestShipmentInvoice(actor: AppUser, consignmentId: string, itemIds: string[]) {
+/** Admin chooses packed BOQ lines and the intended delivery method before Accounts bills. */
+export function requestShipmentInvoice(actor: AppUser, consignmentId: string, itemIds: string[], deliveryMethod: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY") {
   if (actor.role !== "ADMIN") throw new RuleError("Only Admin can request a shipment invoice.");
   const consignment = db.consignments.find((entry) => entry.id === consignmentId);
   if (!consignment) throw new RuleError("Shipment not found.");
@@ -846,9 +846,11 @@ export function requestShipmentInvoice(actor: AppUser, consignmentId: string, it
   const selected = [...new Set(itemIds)].filter((id) => allowed.has(id));
   if (!selected.length) throw new RuleError("Choose at least one packed product for the invoice.");
   consignment.invoiceRequestItemIds = selected;
+  consignment.deliveryMethod = deliveryMethod;
   const project = requireProject(consignment.projectId);
-  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"}.`, "/accounts");
-  audit(actor, `consignments/${consignmentId}`, "UPDATE", `Invoice requested for ${selected.length} shipment lines`);
+  const deliveryLabel = deliveryMethod === "DIRECT_TRUCK" ? "direct truck" : "delivery partner";
+  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"} · ${deliveryLabel}.`, "/accounts");
+  audit(actor, `consignments/${consignmentId}`, "UPDATE", `Invoice requested for ${selected.length} shipment lines · ${deliveryLabel}`);
   commit();
 }
 
