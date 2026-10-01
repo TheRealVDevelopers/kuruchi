@@ -78,7 +78,20 @@ service cloud.firestore {
     // The shared operational cache is only available after Firebase sign-in.
     // Role-sensitive views are additionally filtered in the application.
     match /workspaceState/{id} {
-      allow read, write: if signedIn() && id == 'default';
+      function activeMember() {
+        return signedIn()
+          && exists(/databases/$(database)/documents/workspaceProfiles/$(request.auth.uid))
+          && get(/databases/$(database)/documents/workspaceProfiles/$(request.auth.uid)).data.active == true;
+      }
+      allow read: if activeMember() && id == 'default';
+      // Only maintenance functions can advance the deletion barrier. An older
+      // app version must refresh rather than overwrite data after a cleanup.
+      allow create: if activeMember() && isAdmin() && id == 'default'
+        && request.resource.data.get('generation', 0) == 0;
+      allow update: if activeMember() && id == 'default'
+        && request.resource.data.get('generation', 0) == resource.data.get('generation', 0)
+        && request.resource.data.payload.get('workspaceGeneration', 0) == resource.data.get('generation', 0);
+      allow delete: if false;
     }
 
     match /notifications/{id} {

@@ -19,6 +19,7 @@ import RuleBookPage from "@/features/hq/pages/RuleBookPage";
 import { HqFinancePage, HqPeoplePage } from "@/features/hq/pages/HqReportsPages";
 
 import AdminDashboard from "@/features/admin/pages/AdminDashboard";
+import DataManagementPage from "@/features/admin/pages/DataManagementPage";
 import ProjectsListPage from "@/features/admin/pages/ProjectsListPage";
 import ProjectDetailPage from "@/features/admin/pages/ProjectDetailPage";
 import NewProjectPage from "@/features/admin/pages/NewProjectPage";
@@ -100,6 +101,7 @@ export default function AppRouter() {
         <Route path="franchisees" element={<FranchiseesPage />} />
         <Route path="procurement" element={<ProcurementPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="data" element={<DataManagementPage />} />
         <Route path="tools" element={<OperationsToolsPage />} />
         <Route path="how-to-use" element={<RoleGuidePage />} />
       </Route>

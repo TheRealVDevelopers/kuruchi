@@ -1,14 +1,15 @@
 /**
- * Temporary shared workspace transport.
+ * Shared workspace transport with queued writes and server cleanup barriers.
  *
  * The application still keeps a local copy for fast rendering, while this
  * Firestore document makes the working data visible to every browser. When
- * role authentication is switched back on, this single demo document should
- * be replaced by role-protected collection documents.
+ * Admin cleanup increments a server-only generation so stale tabs cannot
+ * resurrect deleted data, even when an older save is still in flight.
  */
 
 import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from "firebase/firestore";
-import { db as firestore } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db as firestore } from "@/lib/firebase";
 
 const COLLECTION = "workspaceState";
 const DOCUMENT = "default";
@@ -20,6 +21,10 @@ let pendingWrites = 0;
 let unsubscribe: (() => void) | null = null;
 let writeQueue: Promise<void> = Promise.resolve();
 let applyWorkspace: ((payload: Record<string, unknown>) => void) | null = null;
+let generation = 0;
+let session = 0;
+let started = false;
+export const sharedWorkspaceStatus = { connected: false };
 
 function clean(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
@@ -91,15 +96,41 @@ export function connectSharedWorkspace(
   applyRemote: (payload: Record<string, unknown>) => void,
   report: (message: string) => void,
 ) {
-  if (!firestore || unsubscribe || typeof window === "undefined") return;
+  if (!firestore || !auth || started || typeof window === "undefined") return;
+  started = true;
   applyWorkspace = applyRemote;
   const reference = doc(firestore, COLLECTION, DOCUMENT);
-  unsubscribe = onSnapshot(reference, (snapshot) => {
+  onAuthStateChanged(auth, (user) => {
+    session += 1;
+    const connectedSession = session;
+    unsubscribe?.();
+    unsubscribe = null;
+    ready = false;
+    sharedWorkspaceStatus.connected = false;
+    appliedRevision = 0;
+    revision = 0;
+    basePayload = null;
+    if (!user) return;
+    unsubscribe = onSnapshot(reference, (snapshot) => {
+    if (connectedSession !== session) return;
     if (snapshot.exists()) {
       const payload = snapshot.data().payload;
       const remoteRevision = Number(snapshot.data().revision ?? 0);
-      ready = true;
+      const remoteGeneration = Number(snapshot.data().generation ?? 0);
       if (!payload || typeof payload !== "object" || remoteRevision <= appliedRevision) return;
+
+      // A cleanup is authoritative even while older edits are waiting. Apply it
+      // immediately; all queued saves captured the old generation and will stop.
+      if (!ready || remoteGeneration !== generation) {
+        generation = remoteGeneration;
+        ready = true;
+        sharedWorkspaceStatus.connected = true;
+        revision = remoteRevision;
+        appliedRevision = remoteRevision;
+        basePayload = clean(payload);
+        applyRemote(basePayload);
+        return;
+      }
 
       revision = Math.max(revision, remoteRevision);
       // While this browser has edits waiting, an older server snapshot must not
@@ -113,22 +144,25 @@ export function connectSharedWorkspace(
       applyRemote(remote);
       return;
     }
-    ready = true;
     const initial = clean(readLocal());
     basePayload = initial;
     pendingWrites += 1;
-    void setDoc(reference, { payload: initial, updatedAt: serverTimestamp(), schemaVersion: 1, revision: 1 })
-      .then(() => { revision = Math.max(revision, 1); })
+    void setDoc(reference, { payload: initial, updatedAt: serverTimestamp(), schemaVersion: 1, revision: 1, generation: 0 })
+      .then(() => { if (session === connectedSession) revision = Math.max(revision, 1); })
       .catch(() => report("Shared workspace could not be created. Changes remain on this device."))
       .finally(() => { pendingWrites -= 1; });
-  }, () => report("Shared workspace is unavailable. Changes remain on this device."));
+    }, () => { ready = false; sharedWorkspaceStatus.connected = false; report("Shared workspace is unavailable. Changes remain on this device."); });
+  });
 }
 
 export function publishSharedWorkspace(readLocal: () => Record<string, unknown>, report: (message: string) => void) {
   if (!firestore || !ready) return;
   const reference = doc(firestore, COLLECTION, DOCUMENT);
+  const expectedGeneration = generation;
+  const expectedSession = session;
   pendingWrites += 1;
   writeQueue = writeQueue.catch(() => undefined).then(async () => {
+    if (!ready || expectedSession !== session || expectedGeneration !== generation) return;
     // Read only when this queued write begins. A bulk click or rapid toggles
     // therefore save one current workspace, not a chain of stale snapshots.
     const local = clean(readLocal());
@@ -136,14 +170,29 @@ export function publishSharedWorkspace(readLocal: () => Record<string, unknown>,
     const result = await runTransaction(firestore, async (transaction) => {
       const current = await transaction.get(reference);
       const currentRevision = Number(current.data()?.revision ?? 0);
+      const currentGeneration = Number(current.data()?.generation ?? 0);
       const remote = current.data()?.payload && typeof current.data()?.payload === "object"
         ? clean(current.data()?.payload)
         : base;
+      if (expectedSession !== session || expectedGeneration !== currentGeneration) {
+        return { nextRevision: currentRevision, payload: remote, generation: currentGeneration, discarded: true };
+      }
       const payload = mergeWorkspace(base, local, remote);
+      payload.workspaceGeneration = currentGeneration;
       const nextRevision = currentRevision + 1;
-      transaction.set(reference, { payload, updatedAt: serverTimestamp(), schemaVersion: 1, revision: nextRevision }, { merge: true });
-      return { nextRevision, payload };
+      transaction.set(reference, { payload, updatedAt: serverTimestamp(), schemaVersion: 1, revision: nextRevision, generation: currentGeneration }, { merge: true });
+      return { nextRevision, payload, generation: currentGeneration, discarded: false };
     });
+    if (expectedSession !== session || result.nextRevision < appliedRevision) return;
+    if (result.discarded || result.generation !== expectedGeneration) {
+      generation = result.generation;
+      revision = result.nextRevision;
+      appliedRevision = result.nextRevision;
+      basePayload = result.payload;
+      applyWorkspace?.(result.payload);
+      report("Admin deleted workspace data. Unsaved edits from before that cleanup were discarded. Please review before editing again.");
+      return;
+    }
     revision = Math.max(revision, result.nextRevision);
     appliedRevision = Math.max(appliedRevision, result.nextRevision);
     // The transaction may have retained an edit from another browser. Bring it

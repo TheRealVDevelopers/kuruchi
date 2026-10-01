@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { AppUser, Role } from "@/types";
 import { auth, db, isFirebaseConfigured } from "@/lib/firebase";
 import { clearPhoneOtp, confirmPhoneOtp, sendPhoneOtp } from "@/lib/firebaseAuth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from "firebase/auth";
 
 interface AuthState {
@@ -59,6 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
+  // Removing or disabling a login also signs out any browser already using it.
+  useEffect(() => {
+    if (!db || !auth || !user?.uid) return;
+    return onSnapshot(doc(db, "workspaceProfiles", user.uid), (snapshot) => {
+      if (!snapshot.exists() || snapshot.data().active === false) {
+        setUser(null);
+        void firebaseSignOut(auth!);
+      }
+    });
+  }, [user?.uid]);
+
   async function firebaseProfile(uid: string): Promise<AppUser | null> {
     if (db) {
       const snapshot = await getDoc(doc(db, "workspaceProfiles", uid));
@@ -98,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async confirmOtp(code) {
         const credential = await confirmPhoneOtp(code);
         const profile = await firebaseProfile(credential.user.uid);
-        if (!profile) {
+        if (!profile || !profile.active) {
           await firebaseSignOut(auth!);
           throw new Error("This phone number has not been invited to a Kurchi workspace yet.");
         }

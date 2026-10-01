@@ -16,6 +16,7 @@ import { useSyncExternalStore } from "react";
 import * as seed from "./seed";
 import * as persist from "./persistence";
 import { connectSharedWorkspace, publishSharedWorkspace } from "./cloudSync";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import type {
   AppNotification, AppUser, AuditEntry, BoqItem, ChangeOrder, Challan, Client, SellerProfile,
   Comment, Consignment, Crate, CreditNote, DocumentRecord, Enquiry, InventoryItem,
@@ -28,6 +29,10 @@ import { rollUp } from "@/lib/money";
 /* --------------------------------------------------------------- the data */
 
 export interface Db {
+  workspaceGeneration: number;
+  /** Retained across cleanup, so deleted records never cause number reuse. */
+  recordIdFloor: number;
+  documentNumberFloor: { INV: number; DC: number };
   sellerProfile: SellerProfile;
   users: AppUser[];
   products: Product[];
@@ -67,6 +72,9 @@ function clone<T>(v: T): T {
 
 function freshFromSeed(): Db {
   return {
+    workspaceGeneration: 0,
+    recordIdFloor: 1000,
+    documentNumberFloor: { INV: 121, DC: 141 },
     sellerProfile: { legalName: "", gstin: "", pan: "", address: "", state: "Karnataka", pincode: "", bankName: "", accountName: "", accountNumber: "", ifsc: "", invoicePrefix: "KP" },
     users: clone(seed.USERS),
     products: clone(seed.PRODUCTS),
@@ -149,16 +157,6 @@ export function commit() {
   listeners.forEach((l) => l());
 }
 
-/** Throw away everything and start again from seed. */
-export function resetToSeed() {
-  persist.clear();
-  Object.assign(db, freshFromSeed());
-  recomputeAll();
-  version += 1;
-  persist.flush(db);
-  listeners.forEach((l) => l());
-}
-
 export const persistence = persist.status;
 
 /* -------------------------------------------------------------------- ids */
@@ -172,11 +170,12 @@ export function primeCounter() {
     ...db.progressLogs, ...db.vendors, ...db.products, ...db.clients,
   ].map((r) => Number(String((r as { id: string }).id).split("-").pop()));
   const highest = seen.filter((n) => Number.isFinite(n)).reduce((m, n) => Math.max(m, n), 1000);
-  counter = Math.max(counter, highest);
+  counter = Math.max(counter, highest, db.recordIdFloor || 1000);
 }
 
 export function nextId(prefix: string): string {
   counter += 1;
+  db.recordIdFloor = counter;
   return `${prefix}-${counter}`;
 }
 
@@ -194,7 +193,7 @@ export function nextDocNumber(kind: "DC" | "INV"): string {
   const highest = existing
     .map((n) => Number(n.split("/").pop()))
     .filter((n) => Number.isFinite(n))
-    .reduce((max, n) => Math.max(max, n), kind === "DC" ? 141 : 121);
+    .reduce((max, n) => Math.max(max, n), db.documentNumberFloor?.[kind] || (kind === "DC" ? 141 : 121));
 
   const date = new Date();
   const start = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
@@ -311,6 +310,8 @@ recomputeAll();
 // Two tabs on one machine should not drift apart.
 if (typeof window !== "undefined") {
   persist.onExternalChange(() => {
+    // Shared snapshots, not another tab's old browser cache, are authoritative.
+    if (isFirebaseConfigured) return;
     const saved = persist.load();
     if (!saved) return;
     (Object.keys(db) as Array<keyof Db>).forEach((key) => {
@@ -326,21 +327,13 @@ if (typeof window !== "undefined") {
   connectSharedWorkspace(
     () => db as unknown as Record<string, unknown>,
     (remote) => {
-      const collections: Array<keyof Db> = ["products", "kits", "programmes", "vendors", "projects", "items", "crates", "consignments", "tickets", "snags", "invoices", "payments", "costEntries"];
-      const localHasWork = collections.some((key) => Array.isArray(db[key]) && db[key].length > 0);
-      const remoteHasWork = collections.some((key) => Array.isArray(remote[key]) && (remote[key] as unknown[]).length > 0);
-      // The first shared document may have been created empty. Preserve a
-      // browser's existing work by making it the initial shared workspace.
-      if (localHasWork && !remoteHasWork) {
-        publishSharedWorkspace(() => db as unknown as Record<string, unknown>, (message) => { persist.status.reason = message; });
-        return;
-      }
       (Object.keys(db) as Array<keyof Db>).forEach((key) => {
         const value = remote[key];
         // @ts-expect-error — key-wise copy across a heterogeneous record
         if (value !== undefined && value !== null) db[key] = value;
       });
       persist.flush(db);
+      persist.status.reason = undefined;
       primeCounter();
       recomputeAll();
       version += 1;

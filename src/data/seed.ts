@@ -2,8 +2,7 @@
  * Clean first-run workspace.
  *
  * This is intentionally empty: Kurchi starts with its real catalogue, BOQs,
- * showrooms and operational records created through the application. Only the
- * six clearly-labelled training logins are supplied to make role testing easy.
+ * showrooms, users and operational records come from the real workspace.
  */
 
 import type {
@@ -13,36 +12,12 @@ import type {
 
 export const NOW = new Date();
 
-/**
- * Demo sign-in accounts. The browser demo accepts password `123456` for each.
- * Firebase copies are provisioned separately so these same addresses can later
- * use real Firebase email sign-in after Email/Password is enabled in Console.
- */
-export const USERS: AppUser[] = [
-  { uid: "demo-admin", email: "admin@kurchi.com", name: "Kurchi Admin", role: "ADMIN", active: true },
-  { uid: "demo-super-admin", email: "superadmin@kurchi.com", name: "Kurchi Super Admin", role: "SUPER_ADMIN", active: true },
-  { uid: "demo-installation", email: "installation@kurchi.com", name: "Installation Team", role: "INSTALLATION", teamId: "demo-installation-team", active: true },
-  { uid: "demo-accounts", email: "accounts@kurchi.com", name: "Accounts Team", role: "ACCOUNTS", active: true },
-  { uid: "demo-ola", email: "ola@kurchi.com", name: "Ola Team", role: "CLIENT", clientId: "demo-ola", active: true },
-  { uid: "demo-franchisee", email: "franchisee@kurchi.com", name: "Franchisee Owner", role: "VENDOR", vendorId: "demo-franchisee", active: true },
-];
+export const USERS: AppUser[] = [];
 
 export const CATEGORIES: string[] = [];
 export const PRODUCTS: Product[] = [];
 export const KITS: Kit[] = [];
-/** Ola is the known client organisation required to start a showroom rollout. */
-export const CLIENTS: Client[] = [
-  {
-    id: "demo-ola",
-    name: "Ola",
-    gstin: "",
-    billingAddress: "",
-    state: "",
-    contactName: "",
-    contactEmail: "",
-    contactPhone: "",
-  },
-];
+export const CLIENTS: Client[] = [];
 export const PROGRAMMES: Programme[] = [];
 export const VENDORS: Vendor[] = [];
 export const PROJECTS: Project[] = [];

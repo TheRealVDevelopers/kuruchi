@@ -122,9 +122,10 @@ export function save(db: Db) {
 
 /** Write immediately — used before a deliberate reload or reset. */
 export function flush(db: Db) {
+  if (timer) { clearTimeout(timer); timer = null; }
+  pending = null;
   const s = storage();
   if (!s) return;
-  if (timer) { clearTimeout(timer); timer = null; }
   try {
     s.setItem(KEY, JSON.stringify(db));
     s.setItem(VERSION_KEY, String(SCHEMA_VERSION));
@@ -135,6 +136,8 @@ export function flush(db: Db) {
 }
 
 export function clear() {
+  if (timer) { clearTimeout(timer); timer = null; }
+  pending = null;
   const s = storage();
   if (!s) return;
   try {

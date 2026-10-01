@@ -4,7 +4,7 @@ import {
   BarChart3, Bell, Boxes, Building2, ClipboardList, FileText, HardHat, Home,
   IndianRupee, LayoutGrid, LogOut, Menu, Package, Receipt, ScrollText,
   CircleHelp, Factory, ShieldCheck, SlidersHorizontal, Truck, Users, Wrench,
-  ChevronRight,
+  ChevronRight, Database,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@/types";
@@ -45,6 +45,7 @@ const NAV: Record<Role, NavItem[]> = {
     { to: "/admin/franchisees", label: "Franchisee owners", icon: Factory },
     { to: "/admin/cost-centres", label: "Project costs", icon: IndianRupee },
     { to: "/admin/users", label: "Users", icon: Users },
+    { to: "/admin/data", label: "Manage data", icon: Database },
     { to: "/admin/how-to-use", label: "How to use", icon: CircleHelp },
   ],
   INSTALLATION: [

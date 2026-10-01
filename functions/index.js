@@ -27,6 +27,7 @@ const { logger } = require("firebase-functions");
 
 initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 5 });
+Object.assign(exports, require("./workspaceMaintenance"));
 
 const SLA_MS = 48 * 60 * 60 * 1000;
 
@@ -97,16 +98,20 @@ exports.runInstallationSlaCheck = onCall(async (request) => {
 
 const ROLES = new Set(["SUPER_ADMIN", "ADMIN", "ACCOUNTS", "INSTALLATION", "CLIENT", "VENDOR"]);
 
-function requireAdmin(request) {
+async function requireAdmin(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
-  if (request.auth.token.role !== "ADMIN") throw new HttpsError("permission-denied", "Only Kurchi Admin can invite users.");
+  if (request.auth.token.role !== "ADMIN") throw new HttpsError("permission-denied", "Only Kurchi Admin can manage team access.");
+  const profile = await getFirestore().collection("workspaceProfiles").doc(request.auth.uid).get();
+  if (!profile.exists || profile.data().role !== "ADMIN" || profile.data().active === false) throw new HttpsError("permission-denied", "Your Admin access is no longer active.");
 }
 
-function requireClient(request) {
+async function requireClient(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
   if (request.auth.token.role !== "CLIENT" || !request.auth.token.clientId) {
     throw new HttpsError("permission-denied", "Only an authorised Ola user can invite a franchisee owner.");
   }
+  const profile = await getFirestore().collection("workspaceProfiles").doc(request.auth.uid).get();
+  if (!profile.exists || profile.data().active === false || profile.data().role !== "CLIENT") throw new HttpsError("permission-denied", "Your Ola access is no longer active.");
   return String(request.auth.token.clientId);
 }
 
@@ -123,7 +128,7 @@ function temporaryPassword() {
  * granted the ADMIN custom claim once from a trusted server-side setup.
  */
 exports.provisionWorkspaceUser = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   try {
     if (!ROLES.has(request.data?.role)) throw new HttpsError("invalid-argument", "Choose a valid workspace role.");
     const data = normaliseInvite(request.data || {});
@@ -162,7 +167,7 @@ exports.provisionWorkspaceUser = onCall(async (request) => {
 
 /** Admin's member list comes from the same protected profiles used at login. */
 exports.listWorkspaceUsers = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const profiles = await getFirestore().collection("workspaceProfiles").get();
   return { users: profiles.docs.map((snapshot) => {
     const profile = snapshot.data();
@@ -176,7 +181,7 @@ exports.listWorkspaceUsers = onCall(async (request) => {
 });
 
 exports.setWorkspaceUserActive = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const { uid, active } = request.data || {};
   if (typeof uid !== "string" || typeof active !== "boolean") throw new HttpsError("invalid-argument", "Choose a user and access status.");
   if (!active && uid === request.auth.uid) throw new HttpsError("failed-precondition", "You cannot deactivate your own account.");
@@ -245,7 +250,7 @@ exports.repairDemoAdminAccess = onCall(async (request) => {
  * Firebase Auth to send its standard first-time password email.
  */
 exports.inviteFranchiseeOwner = onCall(async (request) => {
-  const clientId = requireClient(request);
+  const clientId = await requireClient(request);
   const data = request.data || {};
   const email = String(data.email || "").trim().toLowerCase();
   const name = String(data.name || "").trim();
@@ -280,7 +285,7 @@ exports.inviteFranchiseeOwner = onCall(async (request) => {
 exports.bootstrapDemoUsers = onCall(async (request) => {
   const firestore = getFirestore();
   if (request.data?.action === "rename-demo-domains") {
-    requireAdmin(request);
+    await requireAdmin(request);
     const changes = [
       ["admin@kuruchi.com", "admin@kurchi.com"],
       ["superadmin@kuruchi.com", "superadmin@kurchi.com"],
@@ -351,7 +356,7 @@ exports.bootstrapDemoUsers = onCall(async (request) => {
 
 /** Corrects the initial training-address typo without recreating any accounts. */
 exports.renameDemoAccountDomains = onCall(async (request) => {
-  requireAdmin(request);
+  await requireAdmin(request);
   const changes = [
     ["admin@kuruchi.com", "admin@kurchi.com"],
     ["superadmin@kuruchi.com", "superadmin@kurchi.com"],

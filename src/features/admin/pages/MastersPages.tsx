@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Boxes, Check, X } from "lucide-react";
+import { Boxes, Check, X, Trash2 } from "lucide-react";
+import DeleteUsersDialog from "../components/DeleteUsersDialog";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo } from "@/data/repo";
 import { useDb } from "@/data/store";
@@ -613,6 +614,8 @@ export function UsersPage() {
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [memberError, setMemberError] = useState<string | null>(null);
   const [changingUser, setChangingUser] = useState<string | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [deletingUsers, setDeletingUsers] = useState<AppUser[] | null>(null);
   const loadMembers = async () => {
     if (!functions) { setMemberError("Could not load team access. Please reload and try again."); setLoadingMembers(false); return; }
     setLoadingMembers(true);
@@ -639,6 +642,7 @@ export function UsersPage() {
   };
 
   const columns: Column<AppUser>[] = [
+    { key: "select", header: "Select", cell: (u) => <input type="checkbox" aria-label={`Select ${u.name}`} disabled={u.uid === user.uid || Boolean(changingUser) || (selectedUsers.length >= 100 && !selectedUsers.includes(u.uid))} checked={selectedUsers.includes(u.uid)} onChange={(event) => setSelectedUsers(event.target.checked ? [...selectedUsers, u.uid] : selectedUsers.filter((uid) => uid !== u.uid))} className="h-5 w-5 accent-primary" /> },
     { key: "name", header: "Name", primary: true, cell: (u) => u.name },
     { key: "email", header: "Email", subtitle: true, cell: (u) => <span className="font-mono text-xs">{u.email}</span> },
     {
@@ -673,6 +677,7 @@ export function UsersPage() {
         </button>
       ),
     },
+    { key: "delete", header: "Delete", cell: (u) => u.uid === user.uid ? <span className="text-xs text-muted-foreground">Your account is protected</span> : <button type="button" disabled={Boolean(changingUser)} onClick={() => setDeletingUsers([u])} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-sm font-bold text-primary disabled:opacity-40"><Trash2 className="h-4 w-4" />Delete</button> },
   ];
 
   return (
@@ -685,9 +690,11 @@ export function UsersPage() {
       />
       {inviting && <InviteUserPanel onClose={() => setInviting(false)} onCreated={(member) => { setMembers((current) => [member, ...current.filter((entry) => entry.uid !== member.uid)]); void loadMembers(); }} />}
       {memberError && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{memberError} <button type="button" onClick={() => void loadMembers()} className="ml-2 font-bold underline">Retry</button></p>}
+      {members.length > 1 && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><label className="inline-flex min-h-11 items-center gap-2 text-sm font-bold"><input type="checkbox" checked={members.filter((u) => u.uid !== user.uid).slice(0, 100).every((u) => selectedUsers.includes(u.uid))} onChange={(event) => setSelectedUsers(event.target.checked ? members.filter((u) => u.uid !== user.uid).slice(0, 100).map((u) => u.uid) : [])} className="h-5 w-5 accent-primary" />Select all except my account</label><button type="button" disabled={!selectedUsers.length || Boolean(changingUser)} onClick={() => setDeletingUsers(members.filter((u) => selectedUsers.includes(u.uid)))} className="min-h-11 rounded-xl border px-4 text-sm font-bold text-primary disabled:opacity-40">Delete selected ({selectedUsers.length})</button></div>}
       {loadingMembers && members.length === 0 ? <p role="status" className="py-6 text-sm text-muted-foreground">Loading team members…</p> : <ResponsiveTable data={users} columns={columns} keyOf={(u) => u.uid} minWidth="min-w-[760px]" />}
 
       <p className="mt-4 text-xs text-muted-foreground">Team access is saved to your workspace and stays available on other devices.</p>
+      {deletingUsers && <DeleteUsersDialog users={deletingUsers} onClose={() => setDeletingUsers(null)} onDeleted={(uids) => { setMembers((current) => current.filter((u) => !uids.includes(u.uid))); setSelectedUsers((current) => current.filter((uid) => !uids.includes(uid))); }} />}
       <p className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">Email invites send a secure first-time password link. Logistics coordinators use the Kurchi Admin workspace and its Delivery board; mobile users can use OTP after a mobile number is added.</p>
     </>
   );
