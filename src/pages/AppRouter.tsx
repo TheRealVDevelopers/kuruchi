@@ -11,6 +11,8 @@ import NotFound from "./NotFound";
 import WorkflowDemoPage from "./WorkflowDemoPage";
 
 import LoginPage from "@/features/auth/LoginPage";
+import MyProfilePage from "@/features/auth/MyProfilePage";
+import { ROLES } from "@/types";
 import ProductsPage from "@/features/catalogue/pages/ProductsPage";
 import ProductDetailPage from "@/features/catalogue/pages/ProductDetailPage";
 
@@ -66,6 +68,7 @@ export default function AppRouter() {
       </Route>
 
       {/* ----------------------------------------------------- super admin */}
+      <Route path="/profile" element={<RequireRole allow={[...ROLES]}><RoleLayout /></RequireRole>}><Route index element={<MyProfilePage />} /></Route>
       <Route
         path="/hq"
         element={<RequireRole allow={["SUPER_ADMIN"]}><RoleLayout /></RequireRole>}

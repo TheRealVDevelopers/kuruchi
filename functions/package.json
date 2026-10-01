@@ -6,7 +6,7 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check workspaceUserProvisioning.js && node --check workspaceCleanup.js && node --check workspaceMaintenance.js",
+    "lint": "node --check index.js && node --check workspaceUserProvisioning.js && node --check workspaceCleanup.js && node --check workspaceMaintenance.js && node --check workspaceProfile.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

@@ -4,7 +4,7 @@ import {
   BarChart3, Bell, Boxes, Building2, ClipboardList, FileText, HardHat, Home,
   IndianRupee, LayoutGrid, LogOut, Menu, Package, Receipt, ScrollText,
   CircleHelp, Factory, ShieldCheck, SlidersHorizontal, Truck, Users, Wrench,
-  ChevronRight, Database,
+  ChevronRight, Database, UserRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@/types";
@@ -109,7 +109,7 @@ export default function RoleLayout() {
   if (!user) return null;
 
   const meta = ROLE_META[user.role];
-  const items = NAV[user.role];
+  const items = [...NAV[user.role], { to: "/profile", label: "My profile", icon: UserRound }];
   const notifications = repo.notifications(user);
   const unread = notifications.filter((notification) => !notification.readBy.includes(user.uid));
 
@@ -207,6 +207,7 @@ export default function RoleLayout() {
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <Link to="/profile" aria-label="My profile" title="My profile" className="grid h-10 w-10 place-items-center rounded-xl border hover:bg-muted"><UserRound className="h-4 w-4" /></Link>
             <ThemeToggle />
             <div className="relative">
               <button type="button" aria-label="Open notifications" onClick={() => { setNotificationsOpen((open) => !open); act.markNotificationsRead(user); }} className="relative rounded-md border p-2 hover:bg-muted">

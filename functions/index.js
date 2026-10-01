@@ -28,6 +28,7 @@ const { logger } = require("firebase-functions");
 initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 5 });
 Object.assign(exports, require("./workspaceMaintenance"));
+exports.saveMyWorkspaceProfile = require("./workspaceProfile").saveMyWorkspaceProfile;
 
 const SLA_MS = 48 * 60 * 60 * 1000;
 

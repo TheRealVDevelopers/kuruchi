@@ -4,6 +4,8 @@ import { auth, db, isFirebaseConfigured } from "@/lib/firebase";
 import { clearPhoneOtp, confirmPhoneOtp, sendPhoneOtp } from "@/lib/firebaseAuth";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "@/lib/firebase";
 
 interface AuthState {
   user: AppUser | null;
@@ -50,6 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
           persist(profile);
+        } catch {
+          persist(null);
         } finally {
           setLoading(false);
         }
@@ -66,11 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!snapshot.exists() || snapshot.data().active === false) {
         setUser(null);
         void firebaseSignOut(auth!);
+      } else {
+        setUser(snapshot.data() as AppUser);
       }
     });
   }, [user?.uid]);
 
   async function firebaseProfile(uid: string): Promise<AppUser | null> {
+    if (functions) {
+      const response = await httpsCallable<unknown, AppUser>(functions, "saveMyWorkspaceProfile")({});
+      return response.data;
+    }
     if (db) {
       const snapshot = await getDoc(doc(db, "workspaceProfiles", uid));
       if (snapshot.exists()) return snapshot.data() as AppUser;
