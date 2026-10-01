@@ -608,11 +608,35 @@ function VendorForm({
 export function UsersPage() {
   useDb();
   const { user } = useAuth();
-  const run = useAction();
   const [inviting, setInviting] = useState(false);
+  const [members, setMembers] = useState<AppUser[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [memberError, setMemberError] = useState<string | null>(null);
+  const [changingUser, setChangingUser] = useState<string | null>(null);
+  const loadMembers = async () => {
+    if (!functions) { setMemberError("Could not load team access. Please reload and try again."); setLoadingMembers(false); return; }
+    setLoadingMembers(true);
+    try {
+      const response = await httpsCallable<unknown, { users: AppUser[] }>(functions, "listWorkspaceUsers")({});
+      setMembers(response.data.users);
+      setMemberError(null);
+    } catch (err) { setMemberError(err instanceof Error ? err.message : "Could not load team access."); }
+    finally { setLoadingMembers(false); }
+  };
+  useEffect(() => { if (user?.role === "ADMIN") void loadMembers(); }, [user?.uid, user?.role]);
   if (!user) return null;
 
-  const users = repo.users();
+  const users = members;
+  const setMemberActive = async (member: AppUser) => {
+    if (!functions || changingUser) return;
+    setChangingUser(member.uid);
+    try {
+      await httpsCallable(functions, "setWorkspaceUserActive")({ uid: member.uid, active: !member.active });
+      setMembers((current) => current.map((entry) => entry.uid === member.uid ? { ...entry, active: !member.active } : entry));
+      setMemberError(null);
+    } catch (err) { setMemberError(err instanceof Error ? err.message : "Could not change this user's access."); }
+    finally { setChangingUser(null); }
+  };
 
   const columns: Column<AppUser>[] = [
     { key: "name", header: "Name", primary: true, cell: (u) => u.name },
@@ -638,7 +662,8 @@ export function UsersPage() {
       cell: (u) => (
         <button
           type="button"
-          onClick={() => run(() => act.setUserActive(user, u.uid, !u.active), u.active ? `${u.name} deactivated` : `${u.name} activated`)}
+          disabled={Boolean(changingUser) || u.uid === user.uid}
+          onClick={() => void setMemberActive(u)}
           className={cn(
             "rounded-full border px-2 py-0.5 text-xs font-semibold",
             u.active ? "border-red-200 bg-red-50 text-red-700" : "border-red-200 bg-red-50 text-red-700"
@@ -658,25 +683,76 @@ export function UsersPage() {
         description="Add Kurchi Admin, Accounts, Installation, Super Admin or Ola users. Each person receives only their own workspace."
         actions={<button type="button" onClick={() => setInviting(true)} className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground">Add team member</button>}
       />
-      {inviting && <InviteUserPanel onClose={() => setInviting(false)} />}
-      <ResponsiveTable data={users} columns={columns} keyOf={(u) => u.uid} minWidth="min-w-[760px]" />
+      {inviting && <InviteUserPanel onClose={() => setInviting(false)} onCreated={(member) => { setMembers((current) => [member, ...current.filter((entry) => entry.uid !== member.uid)]); void loadMembers(); }} />}
+      {memberError && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{memberError} <button type="button" onClick={() => void loadMembers()} className="ml-2 font-bold underline">Retry</button></p>}
+      {loadingMembers && members.length === 0 ? <p role="status" className="py-6 text-sm text-muted-foreground">Loading team members…</p> : <ResponsiveTable data={users} columns={columns} keyOf={(u) => u.uid} minWidth="min-w-[760px]" />}
 
-      <DataStatus className="mt-4" />
-
+      <p className="mt-4 text-xs text-muted-foreground">Team access is saved to your workspace and stays available on other devices.</p>
       <p className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">Email invites send a secure first-time password link. Logistics coordinators use the Kurchi Admin workspace and its Delivery board; mobile users can use OTP after a mobile number is added.</p>
     </>
   );
 }
 
-function InviteUserPanel({ onClose }: { onClose: () => void }) {
+function InviteUserPanel({ onClose, onCreated }: { onClose: () => void; onCreated: (member: AppUser) => void }) {
   const { user } = useAuth();
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [phoneNumber, setPhoneNumber] = useState(""); const [role, setRole] = useState<AppUser["role"]>("INSTALLATION"); const [scopeId, setScopeId] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [done, setDone] = useState<string | null>(null);
+  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState(false);
   const partners = repo.vendors(role === "VENDOR" ? "FRANCHISEE" : "INSTALLATION");
   const clients = repo.clients();
   const scopeLabel = role === "VENDOR" ? "Franchisee owner" : role === "INSTALLATION" ? "Installation team" : "Ola account";
   const requiresScope = role === "VENDOR" || role === "INSTALLATION" || role === "CLIENT";
   const changeRole = (next: AppUser["role"]) => { setRole(next); setScopeId(""); };
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); setError(null); if (!functions || !user) { setError("Firebase Functions is not configured in this build."); return; } if (requiresScope && !scopeId) { setError(`Choose the ${scopeLabel.toLowerCase()} this login belongs to.`); return; } setBusy(true); try { const invite = httpsCallable(functions, "provisionWorkspaceUser"); const response = await invite({ name, email: email || undefined, phoneNumber: phoneNumber || undefined, role, clientId: role === "CLIENT" ? scopeId : undefined, vendorId: role === "VENDOR" ? scopeId : undefined, teamId: role === "INSTALLATION" ? scopeId : undefined }); const result = response.data as { uid: string; email?: string | null; phoneNumber?: string | null; role: AppUser["role"] }; act.recordWorkspaceUser(user, { uid: result.uid, name, email: result.email || email, phone: result.phoneNumber || phoneNumber || undefined, role: result.role, active: true, clientId: role === "CLIENT" ? scopeId : undefined, vendorId: role === "VENDOR" ? scopeId : undefined, teamId: role === "INSTALLATION" ? scopeId : undefined }); if (result.email) await sendFirstTimePasswordEmail(result.email); setDone(result.email ? `Invite sent to ${result.email}. They will set their own password from the email.` : `Account ready for ${result.phoneNumber || name}. They can sign in with mobile OTP.`); } catch (err) { setError(err instanceof Error ? err.message : "Could not create the Firebase account."); } finally { setBusy(false); } };
+  const sendSetupEmail = async (address: string) => {
+    try {
+      await sendFirstTimePasswordEmail(address);
+      setEmailSent(true);
+      setError(null);
+      setDone(`Account ready. A password setup email was sent to ${address}.`);
+    } catch (err) {
+      setEmailSent(false);
+      setError(`The account was saved, but its email could not be sent. ${err instanceof Error ? err.message : "Please try sending the setup email again."}`);
+    }
+  };
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    setError(null);
+    if (!functions || !user) { setError("Account invitations are temporarily unavailable. Please reload and try again."); return; }
+    if (requiresScope && !scopeId) { setError(`Choose the ${scopeLabel.toLowerCase()} this login belongs to.`); return; }
+    setBusy(true);
+    try {
+      const invite = httpsCallable(functions, "provisionWorkspaceUser");
+      const response = await invite({ name: name.trim(), email: email.trim(), phoneNumber: phoneNumber.trim(), role, ...(role === "CLIENT" ? { clientId: scopeId } : {}), ...(role === "VENDOR" ? { vendorId: scopeId } : {}), ...(role === "INSTALLATION" ? { teamId: scopeId } : {}) });
+      const result = response.data as { uid: string; email: string | null; phoneNumber: string | null; role: AppUser["role"]; active: boolean };
+      const member: AppUser = { uid: result.uid, name: name.trim(), email: result.email || "", phone: result.phoneNumber || undefined, role: result.role, active: result.active !== false, clientId: role === "CLIENT" ? scopeId : undefined, vendorId: role === "VENDOR" ? scopeId : undefined, teamId: role === "INSTALLATION" ? scopeId : undefined };
+      act.recordWorkspaceUser(user, member);
+      onCreated(member);
+      setCreatedEmail(result.email);
+      setDone(result.email ? `Account saved for ${result.email}. Sending the setup email…` : `Account ready for ${result.phoneNumber || name}. They can sign in with mobile OTP.`);
+      if (result.email) await sendSetupEmail(result.email);
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^Firebase:\s*/, "") : "Could not add this person. Please try again.");
+    } finally { setBusy(false); }
+  };
   const options: Array<{ value: AppUser["role"]; label: string }> = [{ value: "ADMIN", label: "Kurchi Admin / Logistics" }, { value: "ACCOUNTS", label: "Accounts" }, { value: "INSTALLATION", label: "Installation team" }, { value: "SUPER_ADMIN", label: "Super Admin" }, { value: "CLIENT", label: "Ola" }, { value: "VENDOR", label: "Franchisee owner" }];
-  return <section className="mb-5 rounded-2xl border-2 border-primary/25 bg-card p-5"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Secure invitation</p><h2 className="mt-1 text-xl font-extrabold">Add a team member</h2><p className="mt-1 text-sm text-muted-foreground">Email users set their own password from a secure first-time link.</p></div><button type="button" onClick={onClose} className="rounded-xl border px-3 py-2 text-sm font-bold">Close</button></div>{done ? <div className="mt-4 rounded-xl bg-primary/10 p-4 text-sm font-bold text-primary">{done}</div> : <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-2"><input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><select value={role} onChange={(e) => changeRole(e.target.value as AppUser["role"])} className="min-h-11 rounded-xl border bg-background px-3 text-sm font-bold">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address — sends setup link" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Mobile: +919876543210 (for OTP)" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/>{requiresScope && <select required value={scopeId} onChange={(e) => setScopeId(e.target.value)} className="sm:col-span-2 min-h-11 rounded-xl border bg-background px-3 text-sm"><option value="">Choose {scopeLabel.toLowerCase()}</option>{role === "CLIENT" ? clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>) : partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name} · {partner.city}</option>)}</select>}<p className="sm:col-span-2 text-xs text-muted-foreground">Enter an email for password setup, a mobile number for OTP, or both. Logistics coordinators use the Admin delivery workspace.</p>{error && <p className="sm:col-span-2 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}<button disabled={busy || (!email && !phoneNumber)} className="sm:col-span-2 min-h-11 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-40">{busy ? "Creating invitation…" : "Create account & send invite"}</button></form>}</section>;
+  return (
+    <section className="mb-5 rounded-2xl border-2 border-primary/25 bg-card p-5">
+      <div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Secure invitation</p><h2 className="mt-1 text-xl font-extrabold">Add a team member</h2><p className="mt-1 text-sm text-muted-foreground">Email users set their own password from a secure first-time link.</p></div><button type="button" disabled={busy} onClick={onClose} className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50">Close</button></div>
+      {done ? <div className="mt-4 space-y-3"><p role="status" className="rounded-xl bg-primary/10 p-4 text-sm font-bold text-primary">{done}</p>{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}{createdEmail && <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await sendSetupEmail(createdEmail); } finally { setBusy(false); } }} className="min-h-11 rounded-xl border px-4 text-sm font-bold disabled:opacity-40">{busy ? "Sending…" : emailSent ? "Resend setup email" : "Retry setup email"}</button>}</div> : (
+        <form onSubmit={submit} className="mt-5">
+          <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-bold">Full name<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="mt-1.5 min-h-11 w-full rounded-xl border bg-background px-3 text-sm"/></label>
+            <label className="text-sm font-bold">Workspace<select value={role} onChange={(e) => changeRole(e.target.value as AppUser["role"])} className="mt-1.5 min-h-11 w-full rounded-xl border bg-background px-3 text-sm font-bold">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className="text-sm font-bold">Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Sends a password setup link" className="mt-1.5 min-h-11 w-full rounded-xl border bg-background px-3 text-sm"/></label>
+            <label className="text-sm font-bold">Mobile number<input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91 98765 43210 (optional)" className="mt-1.5 min-h-11 w-full rounded-xl border bg-background px-3 text-sm"/></label>
+            {requiresScope && <label className="text-sm font-bold sm:col-span-2">{scopeLabel}<select required value={scopeId} onChange={(e) => setScopeId(e.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border bg-background px-3 text-sm"><option value="">Choose {scopeLabel.toLowerCase()}</option>{role === "CLIENT" ? clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>) : partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name} · {partner.city}</option>)}</select></label>}
+            <p className="sm:col-span-2 text-xs text-muted-foreground">Use an email for password setup, a mobile for OTP, or both. An existing mobile-only account will be linked to this email.</p>
+            {error && <p role="alert" className="sm:col-span-2 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+            <button disabled={busy || !name.trim() || (!email.trim() && !phoneNumber.trim())} className="sm:col-span-2 min-h-11 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-40">{busy ? "Creating invitation…" : "Create account & send invite"}</button>
+          </fieldset>
+        </form>
+      )}
+    </section>
+  );
 }

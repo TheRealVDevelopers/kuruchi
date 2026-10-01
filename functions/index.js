@@ -19,6 +19,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { randomBytes } = require("node:crypto");
+const { normaliseInvite, provisionIdentity, invitationError } = require("./workspaceUserProvisioning");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -123,47 +124,85 @@ function temporaryPassword() {
  */
 exports.provisionWorkspaceUser = onCall(async (request) => {
   requireAdmin(request);
-  const data = request.data || {};
-  if (!ROLES.has(data.role)) throw new HttpsError("invalid-argument", "Choose a valid workspace role.");
-  if (!data.email && !data.phoneNumber) throw new HttpsError("invalid-argument", "Provide an email address or mobile number.");
-  if (data.phoneNumber && !/^\+[1-9]\d{7,14}$/.test(data.phoneNumber)) {
-    throw new HttpsError("invalid-argument", "Use an E.164 mobile number, for example +919876543210.");
-  }
-
-  const admin = getAuth();
-  let user;
   try {
-    user = data.email ? await admin.getUserByEmail(data.email.trim().toLowerCase()) : await admin.getUserByPhoneNumber(data.phoneNumber);
-    user = await admin.updateUser(user.uid, { displayName: data.name?.trim() || user.displayName, phoneNumber: data.phoneNumber || user.phoneNumber, ...(data.initialPassword ? { password: String(data.initialPassword) } : {}) });
+    if (!ROLES.has(request.data?.role)) throw new HttpsError("invalid-argument", "Choose a valid workspace role.");
+    const data = normaliseInvite(request.data || {});
+    const admin = getAuth();
+    const user = await provisionIdentity(admin, data, request.auth.uid);
+    const claims = {
+      ...user.customClaims,
+      role: data.role,
+      active: !user.disabled,
+      clientId: data.clientId || null,
+      teamId: data.teamId || null,
+      vendorId: data.vendorId || null,
+    };
+    await admin.setCustomUserClaims(user.uid, claims);
+    const profile = {
+      uid: user.uid,
+      name: data.name,
+      email: user.email || "",
+      role: data.role,
+      active: !user.disabled,
+      clientId: data.clientId || null,
+      teamId: data.teamId || null,
+      vendorId: data.vendorId || null,
+      ...(user.phoneNumber ? { phoneNumber: user.phoneNumber, phone: user.phoneNumber } : {}),
+      provisionedAt: FieldValue.serverTimestamp(),
+      provisionedBy: request.auth.uid,
+      passwordSetupRequired: Boolean(user.email && !data.initialPassword),
+    };
+    await getFirestore().collection("workspaceProfiles").doc(user.uid).set(profile, { merge: true });
+    return { uid: user.uid, email: user.email || null, phoneNumber: user.phoneNumber || null, role: data.role, active: profile.active, passwordSetupRequired: profile.passwordSetupRequired };
   } catch (error) {
-    if (error.code !== "auth/user-not-found") throw error;
-    user = await admin.createUser({ email: data.email?.trim().toLowerCase(), phoneNumber: data.phoneNumber, ...(data.email ? { password: String(data.initialPassword || temporaryPassword()) } : {}), displayName: data.name?.trim(), disabled: false });
+    if (!(error instanceof HttpsError)) logger.error("Workspace invitation failed", { code: error.code || "unknown", message: error.message });
+    throw invitationError(error);
   }
+});
 
-  const claims = {
-    role: data.role,
-    active: true,
-    clientId: data.clientId || null,
-    teamId: data.teamId || null,
-    vendorId: data.vendorId || null,
-  };
-  await admin.setCustomUserClaims(user.uid, claims);
-  const profile = {
-    uid: user.uid,
-    name: data.name?.trim() || user.displayName || "Kurchi user",
-    email: data.email?.trim().toLowerCase() || user.email || "",
-    role: data.role,
-    active: true,
-    ...(data.clientId ? { clientId: data.clientId } : {}),
-    ...(data.teamId ? { teamId: data.teamId } : {}),
-    ...(data.vendorId ? { vendorId: data.vendorId } : {}),
-    ...(data.phoneNumber || user.phoneNumber ? { phoneNumber: data.phoneNumber || user.phoneNumber } : {}),
-    provisionedAt: FieldValue.serverTimestamp(),
-    provisionedBy: request.auth.uid,
-    passwordSetupRequired: Boolean(data.email && !data.initialPassword),
-  };
-  await getFirestore().collection("workspaceProfiles").doc(user.uid).set(profile, { merge: true });
-  return { uid: user.uid, email: user.email || null, phoneNumber: user.phoneNumber || null, role: data.role, passwordSetupRequired: Boolean(data.email && !data.initialPassword) };
+/** Admin's member list comes from the same protected profiles used at login. */
+exports.listWorkspaceUsers = onCall(async (request) => {
+  requireAdmin(request);
+  const profiles = await getFirestore().collection("workspaceProfiles").get();
+  return { users: profiles.docs.map((snapshot) => {
+    const profile = snapshot.data();
+    return {
+      uid: snapshot.id, name: profile.name || "Kurchi user", email: profile.email || "",
+      role: profile.role, active: profile.active !== false,
+      phone: profile.phoneNumber || profile.phone || null,
+      clientId: profile.clientId || null, teamId: profile.teamId || null, vendorId: profile.vendorId || null,
+    };
+  }) };
+});
+
+exports.setWorkspaceUserActive = onCall(async (request) => {
+  requireAdmin(request);
+  const { uid, active } = request.data || {};
+  if (typeof uid !== "string" || typeof active !== "boolean") throw new HttpsError("invalid-argument", "Choose a user and access status.");
+  if (!active && uid === request.auth.uid) throw new HttpsError("failed-precondition", "You cannot deactivate your own account.");
+  const firestore = getFirestore();
+  const reference = firestore.collection("workspaceProfiles").doc(uid);
+  const previous = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) throw new HttpsError("not-found", "This workspace user was not found.");
+    const profile = snapshot.data();
+    if (!active && profile.role === "ADMIN") {
+      const admins = await transaction.get(firestore.collection("workspaceProfiles").where("role", "==", "ADMIN"));
+      if (admins.docs.filter((entry) => entry.data().active !== false).length <= 1) throw new HttpsError("failed-precondition", "Keep at least one active Admin account.");
+    }
+    transaction.update(reference, { active });
+    return profile.active !== false;
+  });
+  try {
+    const auth = getAuth();
+    const user = await auth.updateUser(uid, { disabled: !active });
+    await auth.setCustomUserClaims(uid, { ...user.customClaims, active });
+    if (!active) await auth.revokeRefreshTokens(uid);
+  } catch (error) {
+    await reference.update({ active: previous });
+    throw invitationError(error);
+  }
+  return { uid, active };
 });
 
 /**
