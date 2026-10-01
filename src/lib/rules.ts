@@ -186,10 +186,13 @@ export function isTransitDelayed(c: Consignment, now = new Date()): boolean {
 /** ST-02 — a damage report without evidence is not a damage report. */
 export function canSubmitTicket(t: Partial<Ticket>): RuleVerdict {
   return fail([
-    !t.photos?.length
+    t.type !== "SERVICE" && !t.photos?.length
       ? { id: "ST-02", reason: "At least one photo is required." }
       : null,
     !t.cause ? { id: "ST-02", reason: "Pick a cause before submitting." } : null,
+    t.type === "SERVICE" && !t.note?.trim()
+      ? { id: "ST-02", reason: "Describe the service request." }
+      : null,
   ]);
 }
 

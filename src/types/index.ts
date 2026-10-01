@@ -83,7 +83,8 @@ export type TicketCause =
   | "TRANSIT"
   | "MANUFACTURING"
   | "HANDLING_AT_SITE"
-  | "SHORT_SUPPLY";
+  | "SHORT_SUPPLY"
+  | "SERVICE_REQUEST";
 
 export type TicketDecision = "REPLACE" | "REPAIR" | "WAIVE";
 
@@ -403,7 +404,7 @@ export interface Consignment {
 export interface Ticket {
   id: string;
   projectId: string;
-  type: "DAMAGE" | "SHORTAGE";
+  type: "DAMAGE" | "SHORTAGE" | "SERVICE";
   itemId: string;
   qtyAffected: number;
   cause: TicketCause;

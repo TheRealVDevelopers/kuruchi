@@ -17,12 +17,12 @@ import { ITEM_STATUS_META, STAGES, projectProgress, type Stage } from "@/lib/sta
 import { cn } from "@/lib/utils";
 import type { SnagSeverity } from "@/types";
 
-const TABS = ["progress", "activity", "timeline", "scope", "deliveries", "documents", "messages", "snags", "handover"] as const;
+const TABS = ["progress", "activity", "timeline", "scope", "deliveries", "documents", "messages", "service", "snags", "handover"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABEL: Record<Tab, string> = {
   progress: "Progress", activity: "Activity", timeline: "Timeline", scope: "Scope", deliveries: "Deliveries",
-  documents: "Documents", messages: "Messages", snags: "Snags", handover: "Handover",
+  documents: "Documents", messages: "Messages", service: "Service", snags: "Snags", handover: "Handover",
 };
 
 export default function PortalProjectPage() {
@@ -58,6 +58,8 @@ export default function PortalProjectPage() {
     ["BOQ", "CHALLAN", "INVOICE", "HANDOVER"].includes(document.type)
   );
   const messages = repo.comments(project.id);
+  const tickets = repo.tickets(project.id);
+  const canRequestService = Boolean(signed) || ["COMPLETED", "CLOSED"].includes(project.status);
 
   const earliest = rawItems.reduce<Stage>((acc, i) => {
     const stage = ITEM_STATUS_META[i.status].stage;
@@ -221,6 +223,14 @@ export default function PortalProjectPage() {
         <section className="visual-card p-4 sm:p-5"><div className="flex items-center gap-2"><span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary"><MessageCircle className="h-4 w-4" /></span><div><h3 className="font-bold">Project conversation</h3><p className="text-xs text-muted-foreground">Keep decisions, questions and updates with the showroom—not in WhatsApp.</p></div></div><div className="mt-5 space-y-3">{messages.length === 0 ? <EmptyState title="No messages yet" hint="Ask Kurchi a question about this showroom." /> : messages.map((item) => <article key={item.id} className={cn("max-w-[88%] rounded-2xl p-3", item.byRole === "CLIENT" ? "ml-auto bg-primary text-primary-foreground" : "border bg-muted/60")}><p className="text-sm">{item.body}</p><p className={cn("mt-2 text-[11px] font-semibold", item.byRole === "CLIENT" ? "text-primary-foreground/75" : "text-muted-foreground")}>{item.byName} · {formatDate(item.at, { day: "numeric", month: "short" })}</p></article>)}</div><form onSubmit={(event) => { event.preventDefault(); if (message.trim()) { run(() => act.addComment(user, project.id, message), "Message sent to Kurchi"); setMessage(""); } }} className="mt-5 flex gap-2 border-t pt-4"><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask Kurchi about this showroom…" className="min-h-11 min-w-0 flex-1 rounded-xl border bg-background px-3 text-sm"/><button aria-label="Send message" className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground"><Send className="h-4 w-4" /></button></form></section>
       )}
 
+      {tab === "service" && (
+        <section className="space-y-4">
+          {canRequestService ? <ClientServiceForm items={items} onSubmit={(input) => run(() => act.fileTicket(user, { projectId: project.id, type: "SERVICE", cause: "SERVICE_REQUEST", qtyAffected: 1, photos: [], ...input }), "Service request sent", "Kurchi will review the concern and update this request.")} /> : <EmptyState title="Service requests open after handover" hint="Once this showroom is completed, Ola can select an item and send Kurchi a service concern here." />}
+          {tickets.filter((ticket) => ticket.type === "SERVICE").map((ticket) => <article key={ticket.id} className="rounded-2xl border bg-card p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold">{repo.itemById(ticket.itemId)?.name ?? "Showroom item"}</p><p className="mt-1 text-sm text-muted-foreground">{ticket.note}</p></div><span className="rounded-full bg-muted px-2.5 py-1 text-xs font-bold">{ticket.status.replace(/_/g, " ").toLowerCase()}</span></div><p className="mt-3 text-xs text-muted-foreground">Raised {formatDate(ticket.reportedAt)} · {ticket.reportedBy}</p></article>)}
+          {canRequestService && tickets.filter((ticket) => ticket.type === "SERVICE").length === 0 && <p className="text-sm text-muted-foreground">No service requests for this showroom yet.</p>}
+        </section>
+      )}
+
       {tab === "snags" && (
         <div className="space-y-4">
           <ClientSnagForm
@@ -278,6 +288,12 @@ export default function PortalProjectPage() {
       )}
     </>
   );
+}
+
+function ClientServiceForm({ items, onSubmit }: { items: Array<{ id: string; name: string; spec: string }>; onSubmit: (input: { itemId: string; note: string }) => void }) {
+  const [itemId, setItemId] = useState(items[0]?.id ?? "");
+  const [note, setNote] = useState("");
+  return <form onSubmit={(event) => { event.preventDefault(); if (itemId && note.trim()) { onSubmit({ itemId, note: note.trim() }); setNote(""); } }} className="rounded-2xl border bg-card p-5"><p className="eyebrow">After-sales service</p><h3 className="mt-1 text-lg font-extrabold">Request help for an installed item</h3><p className="mt-1 text-sm text-muted-foreground">Choose the item and briefly tell Kurchi what needs attention.</p><div className="mt-5 grid gap-3"><select value={itemId} onChange={(event) => setItemId(event.target.value)} className="min-h-11 rounded-xl border bg-background px-3 text-sm font-semibold">{items.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.spec}</option>)}</select><textarea required value={note} onChange={(event) => setNote(event.target.value)} placeholder="Example: Chair base is loose near the billing counter." className="min-h-28 rounded-xl border bg-background p-3 text-sm"/><button disabled={!itemId || !note.trim()} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-40">Send service request</button></div></form>;
 }
 
 function OtpSign({ onSign }: { onSign: (otp: string) => boolean }) {

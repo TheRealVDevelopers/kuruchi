@@ -1068,13 +1068,13 @@ export function receiveCrate(
   commit();
 }
 
-/** Rule ST-02 — a photo and a cause, or no ticket. */
+/** Rule ST-02 — evidence for damage, or a clear description for a service request. */
 export function fileTicket(
   actor: AppUser,
   input: {
     projectId: string;
     itemId: string;
-    type: "DAMAGE" | "SHORTAGE";
+    type: "DAMAGE" | "SHORTAGE" | "SERVICE";
     qtyAffected: number;
     cause: TicketCause;
     photos: string[];
@@ -1083,12 +1083,16 @@ export function fileTicket(
 ) {
   const project = requireProject(input.projectId);
   if (actor.role === "INSTALLATION") requireAssignedInstallation(actor, project);
-  else requireFranchisee(actor, project);
+  else if (actor.role === "VENDOR") requireFranchisee(actor, project);
+  else if (actor.role === "CLIENT") {
+    if (!actor.clientId || actor.clientId !== project.clientId) throw new RuleError("Only Ola users for this showroom can raise a service request.");
+    if (input.type !== "SERVICE") throw new RuleError("Ola can raise a service request; delivery damage is reported at site.");
+  } else throw new RuleError("Only the assigned site team, franchisee owner or Ola can raise a report.");
   const verdict = canSubmitTicket(input);
   if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
 
   const item = db.items.find((i) => i.id === input.itemId);
-  if (item) {
+  if (item && input.type !== "SERVICE") {
     item.status = input.type === "DAMAGE" ? "RECEIVED_DAMAGED" : "SHORT_SUPPLIED";
     item.statusUpdatedAt = now();
   }
