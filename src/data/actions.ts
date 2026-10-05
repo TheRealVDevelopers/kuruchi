@@ -9,7 +9,7 @@
 import { audit, commit, db, nextDocNumber, nextId, nextProjectCode, NOW, recomputeProject } from "./store";
 import type {
   AppUser, BoqItem, ChangeOrder, Client, CreditNote, DocumentRecord, InventoryItem, PurchaseOrder, ScheduleTask, SellerProfile,
-  ItemStatus, Product, Programme, Project, Role, SnagSeverity, TicketCause,
+  ItemStatus, Kit, Product, Programme, Project, Role, SnagSeverity, TicketCause,
   TicketDecision, Vendor, VendorBill, SiteWorkStatus, CostEntry, OperationalStatus,
 } from "@/types";
 import {
@@ -273,7 +273,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     olaApprovedAt: actor.role === "CLIENT" ? now() : undefined,
     olaApprovedBy: actor.role === "CLIENT" ? actor.name : undefined,
     boqMode: input.boqMode,
-    standardKitId: input.boqMode === "STANDARD" ? input.kitId : undefined,
+    standardKitId: input.boqMode !== "MODULAR" ? input.kitId : undefined,
     site: {
       address: input.address.trim(),
       city: input.city.trim(),
@@ -586,6 +586,7 @@ export function addBoqLine(
     id: nextId("itm"),
     projectId,
     productId,
+    orderCategory: product.orderCategory ?? "SALES",
     name: product.name,
     spec: product.shortSpec,
     hsnCode: product.hsnCode,
@@ -1681,17 +1682,22 @@ export function blankKit(): Kit {
   return { id: nextId("kit"), name: "", description: "", version: 1, active: true, mode: "STANDARD", lines: [] };
 }
 
-/** The one reusable Standard BOQ. Modular projects always use the full catalogue. */
+/** Reusable Standard BOQ kits. Modular projects always use the full catalogue. */
 export function saveKit(actor: AppUser, kit: Kit) {
   if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage BOQ kits.");
   if (!kit.name.trim()) throw new RuleError("Give this BOQ kit a name.");
   if (!kit.lines.length) throw new RuleError("Add at least one catalogue item to this BOQ kit.");
-  const cleaned = { ...kit, mode: "STANDARD" as const, name: kit.name.trim(), lines: kit.lines.filter((line) => line.productId && line.defaultQty > 0) };
-  if (!cleaned.lines.length) throw new RuleError("Each kit line needs a product and quantity.");
-  const existing = db.kits.findIndex((entry) => entry.id === kit.id);
-  if (db.kits.some((entry) => entry.id !== kit.id && entry.active && entry.mode !== "MODULAR")) {
-    throw new RuleError("Only one active Standard BOQ is allowed. Edit the existing Standard BOQ instead.");
+  const productIds = new Set<string>();
+  for (const line of kit.lines) {
+    const product = db.products.find((entry) => entry.id === line.productId);
+    if (!product) throw new RuleError("Each kit line needs an existing catalogue product.");
+    if (productIds.has(line.productId)) throw new RuleError(`${product.name} appears more than once. Combine its quantities in one kit line.`);
+    productIds.add(line.productId);
+    if (!Number.isFinite(line.defaultQty) || line.defaultQty <= 0) throw new RuleError("Each kit quantity must be a number greater than zero.");
+    if (!Number.isFinite(product.defaultSellingPrice) || product.defaultSellingPrice < 0) throw new RuleError(`Set a valid selling price for ${product.name} before saving this BOQ kit.`);
   }
+  const cleaned = { ...kit, mode: "STANDARD" as const, name: kit.name.trim(), lines: kit.lines.map((line) => ({ ...line })) };
+  const existing = db.kits.findIndex((entry) => entry.id === kit.id);
   if (existing >= 0) db.kits[existing] = { ...cleaned, version: Math.max(cleaned.version, db.kits[existing].version + 1) };
   else db.kits.push(cleaned);
   audit(actor, `kits/${kit.id}`, existing >= 0 ? "UPDATE" : "CREATE", `${cleaned.name} · ${cleaned.lines.length} items`);

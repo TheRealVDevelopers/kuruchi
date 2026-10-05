@@ -35,15 +35,18 @@ export function CataloguePage() {
   const { user } = useAuth();
   const run = useAction();
   const [editing, setEditing] = useState<Product | null>(null);
+  const [orderCategory, setOrderCategory] = useState<"ALL" | "SALES" | "SERVICE">("ALL");
   if (!user) return null;
 
   const products = repo.products();
+  const visibleProducts = products.filter((product) => orderCategory === "ALL" || (product.orderCategory ?? "SALES") === orderCategory);
   const categories = [...new Set([...repo.categories(), "Storage Units", "Sofas", "Chairs", "Counters", "Tables"])];
 
   const columns: Column<Product>[] = [
     { key: "name", header: "Product", primary: true, cell: (p) => p.name || "(unnamed)" },
     { key: "spec", header: "Spec", subtitle: true, cell: (p) => <span className="text-xs">{p.shortSpec}</span> },
     { key: "category", header: "Category", cell: (p) => p.category },
+    { key: "orderCategory", header: "Type", cell: (p) => <span className="font-semibold">{p.orderCategory === "SERVICE" ? "Service" : "Sales"}</span> },
     { key: "hsn", header: "HSN", cell: (p) => <span className="font-mono text-xs">{p.hsnCode || "—"}</span> },
     { key: "base", header: "Base", cell: (p) => <span className="tabular-nums">{formatINR(p.defaultBasePrice)}</span> },
     { key: "selling", header: "Selling", cell: (p) => <span className="tabular-nums">{formatINR(p.defaultSellingPrice)}</span> },
@@ -69,6 +72,19 @@ export function CataloguePage() {
         </button>
       ),
     },
+    {
+      key: "edit", header: "Edit",
+      cell: (p) => (
+        <button
+          type="button"
+          aria-label={`Edit ${p.name}`}
+          onClick={(event) => { event.stopPropagation(); setEditing({ ...p }); }}
+          className="rounded-md border px-3 py-2 text-xs font-bold hover:bg-muted"
+        >
+          Edit
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -89,6 +105,7 @@ export function CataloguePage() {
 
       {editing && (
         <ProductForm
+          key={editing.id}
           product={editing}
           categories={categories}
           isNew={!products.some((p) => p.id === editing.id)}
@@ -103,13 +120,27 @@ export function CataloguePage() {
         />
       )}
 
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter products by type">
+        {(["ALL", "SALES", "SERVICE"] as const).map((type) => (
+          <button
+            key={type}
+            type="button"
+            aria-pressed={orderCategory === type}
+            onClick={() => setOrderCategory(type)}
+            className={cn("rounded-md border px-3 py-2 text-sm font-semibold", orderCategory === type ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}
+          >
+            {type === "ALL" ? "All products" : type === "SALES" ? "Sales" : "Service"}
+          </button>
+        ))}
+      </div>
+
       <ResponsiveTable
-        data={products}
+        data={visibleProducts}
         columns={columns}
         keyOf={(p) => p.id}
         onRowClick={(p) => setEditing({ ...p })}
         minWidth="min-w-[880px]"
-        empty="No products yet — add your first one."
+        empty={products.length ? "No products of this type." : "No products yet — add your first one."}
       />
       <p className="mt-2 text-xs text-muted-foreground">Tap a row to edit it.</p>
     </>
@@ -365,6 +396,12 @@ function ProgrammeForm({
 
 /* ------------------------------------------------------------------- kits */
 
+const kitCurrency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const kitLineValue = (line: Kit["lines"][number], products: Product[]) => {
+  const price = products.find((product) => product.id === line.productId)?.defaultSellingPrice ?? 0;
+  return Number.isFinite(line.defaultQty) && Number.isFinite(price) ? price * line.defaultQty : 0;
+};
+
 export function KitsPage() {
   useDb();
   const { user } = useAuth();
@@ -372,7 +409,6 @@ export function KitsPage() {
   const [editing, setEditing] = useState<Kit | null>(null);
   const kits = repo.kits();
   const projects = repo.projects(user);
-  const products = repo.products().filter((product) => product.active);
   if (!user) return null;
 
   return (
@@ -380,19 +416,16 @@ export function KitsPage() {
       <PageHeader
         eyebrow="Masters"
         title="BOQ kits"
-        description="Build the one fixed Standard BOQ. Modular projects always use the complete catalogue with quantity changes only."
+        description="Create multiple Standard BOQ kits and choose the right one for each project. Each kit has its own products and fixed quantities."
         actions={<AddButton label="Create BOQ kit" onClick={() => setEditing(act.blankKit())} />}
       />
 
-      {editing && <KitForm kit={editing} products={products} onCancel={() => setEditing(null)} onSave={(kit) => { const ok = run(() => act.saveKit(user, kit), `${kit.name} saved`); if (ok) setEditing(null); }} />}
+      {editing && <KitForm key={editing.id} kit={editing} products={repo.products()} onCancel={() => setEditing(null)} onSave={(kit) => { const ok = run(() => act.saveKit(user, kit), `${kit.name} saved`); if (ok) setEditing(null); }} />}
 
       <div className="space-y-4">
         {kits.map((kit: Kit) => {
-          const value = kit.lines.reduce((s, l) => {
-            const p = repo.productById(l.productId);
-            return s + (p?.defaultSellingPrice ?? 0) * l.defaultQty;
-          }, 0);
-          const appliedTo = projects.filter((p) => p.programmeId === kit.programmeId).length;
+          const value = kit.lines.reduce((sum, line) => sum + kitLineValue(line, repo.products()), 0);
+          const appliedTo = projects.filter((project) => project.standardKitId === kit.id).length;
           return (
             <section key={kit.id} className="rounded-lg border bg-card p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -408,7 +441,7 @@ export function KitsPage() {
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <div className="text-right">
-                    <p className="font-bold tabular-nums">{formatINR(value)}</p>
+                    <p className="font-bold tabular-nums">{kitCurrency.format(value)}</p>
                     <p className="text-xs text-muted-foreground">{kit.lines.length} lines</p>
                   </div>
                   <div className="flex gap-2"><button type="button" onClick={() => setEditing({ ...kit, lines: kit.lines.map((line) => ({ ...line })) })} className="rounded-md border px-3.5 py-2 text-sm font-semibold hover:bg-muted">Edit kit</button><Link to={`/admin/projects/new?kit=${kit.id}`} className="rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">Start a project</Link></div>
@@ -416,10 +449,10 @@ export function KitsPage() {
               </div>
 
               <ul className="mt-4 divide-y rounded-md border">
-                {kit.lines.map((l) => (
-                  <li key={l.productId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                {kit.lines.map((l, index) => (
+                  <li key={`${l.productId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                     <span className="font-medium">{l.name}</span>
-                    <span className="text-xs text-muted-foreground">{l.zone} · ×{l.defaultQty}</span>
+                    <span className="text-xs text-muted-foreground">{l.zone} · {l.defaultQty} × {kitCurrency.format(repo.productById(l.productId)?.defaultSellingPrice ?? 0)} = {kitCurrency.format(kitLineValue(l, repo.products()))}</span>
                   </li>
                 ))}
               </ul>
@@ -442,9 +475,26 @@ export function KitsPage() {
 
 function KitForm({ kit, products, onCancel, onSave }: { kit: Kit; products: Product[]; onCancel: () => void; onSave: (kit: Kit) => void }) {
   const [draft, setDraft] = useState(kit);
-  const addLine = () => { const product = products[0]; if (!product) return; setDraft({ ...draft, lines: [...draft.lines, { productId: product.id, name: product.name, spec: product.shortSpec, defaultQty: 1, zone: "Showroom" }] }); };
+  const activeProducts = products.filter((product) => product.active);
+  const availableProducts = activeProducts.filter((product) => !draft.lines.some((line) => line.productId === product.id));
+  const value = draft.lines.reduce((sum, line) => sum + kitLineValue(line, products), 0);
+  const addLine = () => { const product = availableProducts[0]; if (!product) return; setDraft({ ...draft, lines: [...draft.lines, { productId: product.id, name: product.name, spec: product.shortSpec, defaultQty: 1, zone: "Showroom" }] }); };
   const updateLine = (index: number, patch: Partial<Kit["lines"][number]>) => setDraft({ ...draft, lines: draft.lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line) });
-  return <section className="mb-6 rounded-3xl border-2 border-primary/25 bg-card p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Standard BOQ builder</p><h2 className="mt-1 text-xl font-extrabold">{kit.name || "Standard BOQ"}</h2><p className="mt-1 text-sm text-muted-foreground">This is the one fixed BOQ. Modular projects use every catalogue product and change quantities only.</p></div><button type="button" onClick={onCancel} className="rounded-xl border px-3 py-2 text-sm font-bold">Close</button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value, mode: "STANDARD" })} placeholder="Example: Standard Ola City Showroom" className="min-h-12 rounded-xl border bg-background px-3 text-sm font-bold"/><input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value, mode: "STANDARD" })} placeholder="What this BOQ is for" className="min-h-12 rounded-xl border bg-background px-3 text-sm"/></div><div className="mt-5"><div className="flex items-center justify-between"><h3 className="font-extrabold">Items in this set</h3><button type="button" onClick={addLine} disabled={!products.length} className="rounded-xl border px-3 py-2 text-sm font-bold text-primary disabled:opacity-40">+ Add item</button></div><div className="mt-3 space-y-2">{draft.lines.map((line, index) => <div key={`${line.productId}-${index}`} className="grid gap-2 rounded-2xl border bg-muted/30 p-3 sm:grid-cols-[1fr_7rem_10rem_auto]"><select value={line.productId} onChange={(event) => { const selectedProduct = products.find((entry) => entry.id === event.target.value); if (selectedProduct) updateLine(index, { productId: selectedProduct.id, name: selectedProduct.name, spec: selectedProduct.shortSpec }); }} className="min-h-11 rounded-xl border bg-background px-3 text-sm font-bold">{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select><input type="number" min={1} value={line.defaultQty} onChange={(event) => updateLine(index, { defaultQty: Math.max(1, Number(event.target.value) || 1) })} className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><input value={line.zone || ""} onChange={(event) => updateLine(index, { zone: event.target.value })} placeholder="Zone / area" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><button type="button" onClick={() => setDraft({ ...draft, lines: draft.lines.filter((_, lineIndex) => lineIndex !== index) })} className="min-h-11 rounded-xl border px-3 text-sm font-bold text-primary">Remove</button></div>)}</div>{draft.lines.length === 0 && <p className="mt-3 rounded-xl bg-muted p-4 text-sm text-muted-foreground">Add catalogue products to build the Standard BOQ.</p>}</div><div className="mt-5 flex justify-end"><button type="button" onClick={() => onSave({ ...draft, mode: "STANDARD" })} className="min-h-12 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground">Save Standard BOQ</button></div></section>;
+  return <section className="mb-6 rounded-3xl border-2 border-primary/25 bg-card p-5 sm:p-6">
+    <div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Standard BOQ builder</p><h2 className="mt-1 text-xl font-extrabold">{kit.name || "Standard BOQ"}</h2><p className="mt-1 text-sm text-muted-foreground">Give this BOQ a name and set its products and quantities. You can create more kits for other project requirements.</p></div><button type="button" onClick={onCancel} className="rounded-xl border px-3 py-2 text-sm font-bold">Close</button></div>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value, mode: "STANDARD" })} placeholder="Example: Standard Ola City Showroom" className="min-h-12 rounded-xl border bg-background px-3 text-sm font-bold"/><input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value, mode: "STANDARD" })} placeholder="What this BOQ is for" className="min-h-12 rounded-xl border bg-background px-3 text-sm"/></div>
+    <div className="mt-5"><div className="flex items-center justify-between"><h3 className="font-extrabold">Items in this set</h3><button type="button" onClick={addLine} disabled={!availableProducts.length} className="rounded-xl border px-3 py-2 text-sm font-bold text-primary disabled:opacity-40">+ Add item</button></div>
+      <div className="mt-3 space-y-2">{draft.lines.map((line, index) => {
+        const product = products.find((entry) => entry.id === line.productId);
+        return <div key={`${line.productId}-${index}`} className="rounded-2xl border bg-muted/30 p-3">
+          <div className="grid gap-2 sm:grid-cols-[1fr_7rem_10rem_auto]"><select aria-label={`Product for kit line ${index + 1}`} value={line.productId} onChange={(event) => { const selectedProduct = products.find((entry) => entry.id === event.target.value); if (selectedProduct) updateLine(index, { productId: selectedProduct.id, name: selectedProduct.name, spec: selectedProduct.shortSpec }); }} className="min-h-11 rounded-xl border bg-background px-3 text-sm font-bold">{!product && <option value={line.productId}>Missing product — select a product</option>}{products.filter((entry) => entry.id === line.productId || (entry.active && !draft.lines.some((otherLine) => otherLine.productId === entry.id))).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}{entry.active ? "" : " (inactive)"}</option>)}</select><input aria-label={`Quantity for ${line.name}`} type="number" min={0} step="any" value={Number.isFinite(line.defaultQty) ? line.defaultQty : ""} onChange={(event) => updateLine(index, { defaultQty: event.target.value === "" ? Number.NaN : Number(event.target.value) })} className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><input value={line.zone || ""} onChange={(event) => updateLine(index, { zone: event.target.value })} placeholder="Zone / area" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><button type="button" onClick={() => setDraft({ ...draft, lines: draft.lines.filter((_, lineIndex) => lineIndex !== index) })} className="min-h-11 rounded-xl border px-3 text-sm font-bold text-primary">Remove</button></div>
+          <p className="mt-2 text-right text-xs tabular-nums text-muted-foreground">Unit rate: {kitCurrency.format(product?.defaultSellingPrice ?? 0)}{product?.unit ? ` / ${product.unit}` : ""} · Line amount: <span className="font-bold text-foreground">{kitCurrency.format(kitLineValue(line, products))}</span></p>
+        </div>;
+      })}</div>
+      {draft.lines.length === 0 && <p className="mt-3 rounded-xl bg-muted p-4 text-sm text-muted-foreground">Add catalogue products to build the Standard BOQ.</p>}
+    </div>
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm font-bold">BOQ value: <span className="tabular-nums">{kitCurrency.format(value)}</span></p><button type="button" onClick={() => onSave({ ...draft, mode: "STANDARD" })} className="min-h-12 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground">Save Standard BOQ</button></div>
+  </section>;
 }
 
 /* --------------------------------------------------------------- vendors */
