@@ -14,6 +14,8 @@ import { KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS, taxMode } from "@/lib/rules";
 import { cn } from "@/lib/utils";
 import type { Challan, Invoice, Payment } from "@/types";
 import { printTaxInvoice } from "@/lib/printInvoice";
+import { PaymentApprovalTasks } from "../components/PaymentApprovalTasks";
+import { ShipmentInvoiceTasks } from "../components/ShipmentInvoiceTasks";
 
 /* ------------------------------------------------------------- dashboard */
 
@@ -213,6 +215,8 @@ export function ChallansPage() {
 
 export function EwayPage() {
   useDb();
+  const { search } = useLocation();
+  const shipmentId = new URLSearchParams(search).get("shipment");
   const { user } = useAuth();
   const run = useAction();
   const [open, setOpen] = useState<string | null>(null);
@@ -220,7 +224,7 @@ export function EwayPage() {
 
   const seller = repo.sellerProfile();
   const needing = repo.consignments().filter(
-    (c) => c.status !== "DELIVERED" && KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS
+    (c) => shipmentId ? c.id === shipmentId : c.status !== "DELIVERED" && KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS
   );
 
   return (
@@ -363,10 +367,13 @@ export function InvoicesPage() {
   const { user } = useAuth();
   const run = useAction();
   const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  const shipmentId = params.get("shipment") ?? undefined;
+  const projectId = params.get("project");
   const [raising, setRaising] = useState(() => new URLSearchParams(search).get("action") === "raise");
   if (!user) return null;
 
-  const invoices = repo.invoices();
+  const invoices = repo.invoices().filter((invoice) => !projectId || invoice.projectId === projectId);
   const projects = repo.projects(user);
 
   const columns: Column<Invoice>[] = [
@@ -412,7 +419,7 @@ export function InvoicesPage() {
         eyebrow="GST"
         title="Tax invoices"
         description="CGST+SGST or IGST is computed from place of supply. Issued invoices are immutable."
-        actions={
+        actions={!shipmentId &&
           <button
             type="button"
             onClick={() => setRaising(!raising)}
@@ -423,9 +430,13 @@ export function InvoicesPage() {
         }
       />
 
-      {raising && (
+      <section className="mb-6 space-y-3">
+        <ShipmentInvoiceTasks shipmentId={shipmentId} projectId={projectId ?? undefined} pendingOnly showEmpty={Boolean(shipmentId) || params.has("requests")} />
+      </section>
+
+      {raising && !shipmentId && (
         <RaiseInvoiceForm
-          projects={projects}
+          projects={projectId ? projects.filter((project) => project.id === projectId) : projects}
           onSubmit={(v) => {
             const ok = run(
               () => act.issueInvoice(user, v.projectId, { final: false, percent: v.percent, description: v.description }),
@@ -506,6 +517,8 @@ function RaiseInvoiceForm({
 
 export function PaymentsPage() {
   useDb();
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
   const { user } = useAuth();
   const run = useAction();
   const [paying, setPaying] = useState<string | null>(null);
@@ -528,6 +541,8 @@ export function PaymentsPage() {
   return (
     <>
       <PageHeader eyebrow="Accounts" title="Payments" description="Record receipts against invoices. Part payments age the balance." />
+
+      {(params.has("verify") || params.has("verification")) && <section className="mb-6 space-y-3 rounded-2xl border bg-card p-4"><h2 className="text-lg font-bold">Payment verification</h2><PaymentApprovalTasks projectId={params.get("verify") ?? undefined}/></section>}
 
       <h2 className="mb-3 text-lg font-bold tracking-tight">Open invoices</h2>
       {invoices.length === 0 ? (

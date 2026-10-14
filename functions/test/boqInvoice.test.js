@@ -41,7 +41,7 @@ test("six checked ready items produce an invoice containing exactly those six", 
   const unselected = JSON.stringify(h.db.items.slice(6));
   const [shipmentId] = h.api.requestSelectedBoqInvoice(admin, ids, "DIRECT_TRUCK", "BOQ-06");
   const request = h.db.notifications.find((notification) => notification.title === "Invoice requested by Admin");
-  assert.equal(request.link, `/accounts#shipment-${encodeURIComponent(shipmentId)}`);
+  assert.equal(request.link, `/accounts/invoices?shipment=${encodeURIComponent(shipmentId)}`);
   assert.equal(h.db.notifications.find((notification) => notification.title === "Shipment ready for billing").link, request.link);
   assert.deepEqual(Array.from(h.db.consignments[0].invoiceRequestItemIds), ids);
   assert.deepEqual(Array.from(h.db.crates[0].itemIds), ids);

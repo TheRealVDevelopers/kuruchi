@@ -385,7 +385,7 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
     };
     project.advanceRequiredPct = project.advanceRequiredPct ?? 0;
     project.advanceReceivedPct = 0;
-    notify("ACCOUNTS", "Payment verification needed", `${project.name} · ₹${project.initialPayment.amount.toLocaleString("en-IN")} paid (${percentage}%). Check UTR ${project.initialPayment.reference}.`, "/accounts");
+    notify("ACCOUNTS", "Payment verification needed", `${project.name} · ₹${project.initialPayment.amount.toLocaleString("en-IN")} paid (${percentage}%). Check UTR ${project.initialPayment.reference}.`, `/accounts/payments?verify=${encodeURIComponent(project.id)}`);
     notify("VENDOR", "Franchisee welcome is ready", `${project.name} has been created. A login invitation will be sent when SMS/email delivery is connected.`, "/franchisee");
   }
   commit();
@@ -466,7 +466,7 @@ export function resubmitInitialPayment(actor: AppUser, projectId: string, input:
   project.initialPayment = { amount, percentage, reference: input.reference.trim(), proofName: input.proofName, proofUrl: input.proofUrl, submittedAt: now(), status: "PENDING_VERIFICATION" };
   project.advanceReceivedPct = 0;
   project.statusUpdatedAt = now();
-  notify("ACCOUNTS", "Corrected payment needs verification", `${project.name} · ₹${amount.toLocaleString("en-IN")} · UTR ${project.initialPayment.reference}`, "/accounts");
+  notify("ACCOUNTS", "Corrected payment needs verification", `${project.name} · ₹${amount.toLocaleString("en-IN")} · UTR ${project.initialPayment.reference}`, `/accounts/payments?verify=${encodeURIComponent(projectId)}`);
   audit(actor, `projects/${projectId}`, "UPDATE", "Payment details corrected and resubmitted by Ola");
   commit();
   return project;
@@ -527,7 +527,7 @@ export function setOperationalStatus(actor: AppUser, projectId: string, status: 
     notify("INSTALLATION", "Site delivery received", `${project.site.city}: start installation within 48 hours.`, `/site/${projectId}`);
   }
   if (status === "INSTALLATION" && !project.installationStartedAt) project.installationStartedAt = now();
-  if (status === "COMPLETED") notify("ACCOUNTS", "Project ready for closure", `${project.site.city}: verify final invoice and close the cost centre.`, "/accounts");
+  if (status === "COMPLETED") notify("ACCOUNTS", "Project ready for closure", `${project.site.city}: verify final invoice and close the cost centre.`, `/accounts/cost-centres?project=${encodeURIComponent(projectId)}`);
   audit(actor, `projects/${projectId}`, "UPDATE", `Rollout stage changed to ${status.replace(/_/g, " ").toLowerCase()}${details.note ? ` · ${details.note}` : ""}`);
   commit();
 }
@@ -927,7 +927,7 @@ export function createDispatchBatch(
   });
   items.forEach((item, index) => { if (!item) return; item.qtyReadyToPack = Math.max(0, (item.qtyReadyToPack || item.qty) - input.allocations[index].qty); item.status = "PACKED"; item.statusUpdatedAt = now(); item.crateId = item.crateId ?? crateId; item.consignmentId = consignmentId; });
   audit(actor, `consignments/${consignmentId}`, "CREATE", `Packing batch ${input.crateCode.trim().toUpperCase()} created`);
-  notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, `/accounts#shipment-${encodeURIComponent(consignmentId)}`);
+  notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, `/accounts/invoices?shipment=${encodeURIComponent(consignmentId)}`);
   recomputeProject(input.projectId);
   commit();
   return consignmentId;
@@ -957,7 +957,7 @@ export function requestShipmentInvoice(actor: AppUser, consignmentId: string, it
   consignment.deliveryMethod = deliveryMethod;
   const project = requireProject(consignment.projectId);
   const deliveryLabel = deliveryMethod === "DIRECT_TRUCK" ? "direct truck" : "delivery partner";
-  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"} · ${deliveryLabel}.`, `/accounts#shipment-${encodeURIComponent(consignmentId)}`);
+  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"} · ${deliveryLabel}.`, `/accounts/invoices?shipment=${encodeURIComponent(consignmentId)}`);
   audit(actor, `consignments/${consignmentId}`, "UPDATE", `Invoice requested for ${selected.length} shipment lines · ${deliveryLabel}`);
   commit();
 }
@@ -1079,7 +1079,7 @@ export function completeRtsChecklist(
     rtsCheckedAt: now(),
   });
   audit(actor, `consignments/${consignmentId}`, "UPDATE", `RTS checklist complete · ${boxCounts.join(" + ")} boxes`);
-  notify("ACCOUNTS", "Shipment ready for documents", `${requireProject(consignment.projectId).site.city}: create its challan and partial invoice.`, `/accounts#shipment-${encodeURIComponent(consignmentId)}`);
+  notify("ACCOUNTS", "Shipment ready for documents", `${requireProject(consignment.projectId).site.city}: create its challan and partial invoice.`, `/accounts/invoices?shipment=${encodeURIComponent(consignmentId)}`);
   commit();
   return consignment;
 }

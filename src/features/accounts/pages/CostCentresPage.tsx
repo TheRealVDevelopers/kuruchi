@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { IndianRupee, PlusCircle } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo } from "@/data/repo";
@@ -24,7 +25,11 @@ export default function CostCentresPage() {
   const { user } = useAuth();
   const run = useAction();
   const projects = repo.projects(user);
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [params] = useSearchParams();
+  const requestedProjectId = params.get("project");
+  const [selection, setSelection] = useState<{ request: string | null; id: string } | null>(null);
+  const projectId = selection?.request === requestedProjectId ? selection.id : requestedProjectId ?? projects[0]?.id ?? "";
+  const setProjectId = (id: string) => setSelection({ request: requestedProjectId, id });
   const [head, setHead] = useState<CostEntry["head"]>("PRODUCTION");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -36,6 +41,7 @@ export default function CostCentresPage() {
 
   return <>
     <PageHeader eyebrow="Accounts" title="Cost centres" description="Record every project expense in one simple place. Admin and Accounts use the same heads." />
+    {requestedProjectId && <p className="mb-4 rounded-xl border bg-card p-4 text-sm"><b>{project?.name ?? "Requested project"}</b> · <Link className="font-bold text-primary underline" to={`/accounts/invoices?project=${encodeURIComponent(projectId)}`}>Review project tax invoices</Link></p>}
     <StatStrip><StatCard label="Selected project cost" value={formatINR(total)} sub={`${entries.length} entries`} /><StatCard label="BOQ value" value={formatINR(project?.totals.value ?? 0)} /></StatStrip>
     <section className="mt-5 rounded-2xl border bg-card p-4 sm:p-5">
       <h2 className="text-lg font-extrabold">Add an expense</h2>
