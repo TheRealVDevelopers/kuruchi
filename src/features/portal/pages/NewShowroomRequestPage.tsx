@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, CreditCard, Store, UserRound } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -10,8 +10,9 @@ import { uploadPaymentProof } from "@/lib/firebaseFiles";
 import { functions } from "@/lib/firebase";
 import { sendFirstTimePasswordEmail } from "@/lib/firebaseInvites";
 import { httpsCallable } from "firebase/functions";
-import { useDb } from "@/data/store";
+import { commit, useDb } from "@/data/store";
 import { toast } from "sonner";
+import { sharedWorkspaceStatus, waitForSharedWorkspaceSave } from "@/data/cloudSync";
 
 const STATES = ["Andhra Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Karnataka", "Kerala", "Maharashtra", "Tamil Nadu", "Telangana", "Uttar Pradesh", "West Bengal"];
 const STEPS = ["Showroom", "Choose BOQ", "Payment"];
@@ -26,7 +27,9 @@ export default function NewShowroomRequestPage() {
   const client = repo.clients().find((row) => row.id === user?.clientId) ?? repo.clients()[0];
   const programme = repo.programmes().find((row) => row.clientId === client?.id);
   const products = repo.products().filter((product) => product.active);
-  const standardKits = repo.kits().filter((kit) => kit.active && kit.mode !== "MODULAR");
+  const kits = repo.kits().filter((kit) => kit.active);
+  const [kitId, setKitId] = useState("");
+  const selectedKit = kits.find((kit) => kit.id === kitId);
 
   const [step, setStep] = useState(0);
   const [showroomName, setShowroomName] = useState("");
@@ -42,27 +45,23 @@ export default function NewShowroomRequestPage() {
   const [email, setEmail] = useState("");
   const [openingDate, setOpeningDate] = useState("");
   const [mode, setMode] = useState<"STANDARD" | "MODULAR">("STANDARD");
-  const [standardKitId, setStandardKitId] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  // Derive the initial kit after the live catalogue loads, retaining an explicit choice.
-  const standardKit = standardKits.find((kit) => kit.id === standardKitId) ?? standardKits[0];
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const pendingRequest = useRef<{ projectId: string; franchiseeId: string } | null>(null);
 
   const lines = useMemo(() => {
-    const source = mode === "STANDARD"
-      ? standardKit?.lines ?? []
-      : products.map((product) => ({ productId: product.id, name: product.name, spec: product.shortSpec, defaultQty: 0, zone: "Showroom" }));
+    const source = selectedKit?.lines ?? [];
     return source.map((line) => {
       const product = repo.productById(line.productId);
-      const qty = mode === "MODULAR" ? quantities[line.productId] ?? 0 : line.defaultQty;
+      const qty = mode === "MODULAR" ? quantities[line.productId] ?? line.defaultQty : line.defaultQty;
       const price = product?.defaultSellingPrice ?? 0;
       return { ...line, qty, price, total: qty * price };
     });
-  }, [mode, products, quantities, standardKit]);
+  }, [mode, products, quantities, selectedKit]);
 
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   const paid = Number(amount) || 0;
@@ -81,7 +80,9 @@ export default function NewShowroomRequestPage() {
 
   const submit = async () => {
     setSubmitting(true);
+    setSubmissionError(null);
     try {
+      if (!sharedWorkspaceStatus.connected) throw new Error("Your shared workspace is still connecting. Please wait and try again; nothing has been sent to Accounts yet.");
       let proof: { name: string; url: string } | undefined;
       let proofPendingUpload = false;
       if (proofFile) {
@@ -96,12 +97,18 @@ export default function NewShowroomRequestPage() {
       }
       let projectId = "";
       let franchiseeId = "";
-      const saved = run(() => {
+      const saveRequest = () => {
+        if (pendingRequest.current) {
+          projectId = pendingRequest.current.projectId;
+          franchiseeId = pendingRequest.current.franchiseeId;
+          commit();
+          return;
+        }
         const project = act.createProjectFromKit(user, {
           clientId: client.id, programmeId: programme?.id ?? "", showroomName, showroomGstin: gstin, noGstinReason: noGstin ? noGstinReason : undefined,
           city, state, pincode, address, contactName: owner, contactPhone: phone,
           targetCompletionDate: openingDate, retentionPct: 5, dlpMonths: 12,
-          kitId: mode === "STANDARD" ? standardKit?.id : undefined,
+          kitId: selectedKit?.id,
           boqMode: mode,
           quantities: Object.fromEntries(lines.map((line) => [line.productId, line.qty])),
           franchisee: { name: owner, phone, email, gstin },
@@ -109,9 +116,15 @@ export default function NewShowroomRequestPage() {
         });
         projectId = project.id;
         franchiseeId = project.franchiseeId ?? "";
-      }, "Payment sent to Accounts", "Accounts will verify the amount and reference. Kurchi Admin receives the project only after verification.");
-      if (!saved) setSubmitting(false);
-      else {
+        pendingRequest.current = { projectId, franchiseeId };
+      };
+      saveRequest();
+      {
+        await waitForSharedWorkspaceSave();
+        toast.success("Payment sent to Accounts", { description: "The request is saved in the shared workspace. Accounts can now verify the payment before Admin starts work." });
+        // Invitation delivery must not hold the saved request on "Saving".
+        setSubmitting(false);
+        navigate(`/portal/projects/${projectId}`);
         try {
           if (!functions || !franchiseeId) throw new Error("The franchisee account could not be prepared. Please contact Kurchi Admin.");
           const invite = httpsCallable(functions, "inviteFranchiseeOwner");
@@ -122,23 +135,24 @@ export default function NewShowroomRequestPage() {
           toast.error("Showroom saved, but invitation needs attention", { description: inviteError instanceof Error ? inviteError.message : "Ask Kurchi Admin to resend the franchisee invite." });
         }
         if (proofPendingUpload) toast.info("Payment sent without the screenshot", { description: "The UTR was saved for Accounts. Attach the file again after sign-in is enabled." });
-        navigate(`/portal/projects/${projectId}`);
       }
     } catch (error) {
       setSubmitting(false);
-      run(() => { throw error; }, "Payment proof could not be uploaded");
+      setSubmissionError(error instanceof Error ? error.message : "The showroom could not be submitted. Please retry.");
+      run(() => { throw error; });
     }
   };
 
   return <div className="mx-auto max-w-4xl">
+    {submissionError && <div role="alert" className="sticky top-20 z-20 mb-4 rounded-2xl border border-destructive/40 bg-card p-4 text-sm"><p className="font-extrabold text-destructive">Showroom submission has not been confirmed</p><p className="mt-2">{submissionError}</p><p className="mt-2 text-muted-foreground">Your form is still here. Resolve this error and retry. Do not create a second request.</p></div>}
     <Link to="/portal" className="mb-5 inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Back to showrooms</Link>
     <section className="rounded-[2rem] bg-rail p-6 text-rail-foreground sm:p-8"><p className="text-xs font-bold uppercase tracking-[.16em] text-rail-muted">Ola rollout</p><h1 className="mt-3 text-3xl font-extrabold">Open a new showroom</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-rail-muted">Add the location, choose the Kurchi BOQ, then share the payment reference. Accounts checks payment before Kurchi starts work.</p><div className="mt-7 grid grid-cols-3 gap-2">{STEPS.map((label, index) => <div key={label} className={`rounded-xl px-3 py-2 text-center text-xs font-bold ${index === step ? "bg-primary text-primary-foreground" : index < step ? "bg-white/15 text-white" : "bg-white/5 text-rail-muted"}`}>{index + 1}. {label}</div>)}</div></section>
 
     {step === 0 && <section className="mt-5 space-y-5"><FormCard icon={<Store className="h-5 w-5" />} title="Showroom details" hint="Where Kurchi will build the showroom."><div className="grid gap-3 sm:grid-cols-2"><Field label="Showroom name" value={showroomName} onChange={setShowroomName} placeholder="Ola Electric — Indiranagar" required /><Field label="City" value={city} onChange={setCity} placeholder="Bengaluru" required /><Select label="State" value={state} onChange={setState} options={STATES} /><Field label="PIN code" value={pincode} onChange={(value) => setPincode(value.replace(/\D/g, "").slice(0, 6))} placeholder="560038" required /><div className="sm:col-span-2"><Field label="Full showroom address" value={address} onChange={setAddress} placeholder="Building, road, area and landmark" required /></div><Field label="Showroom GSTIN" value={gstin} onChange={(value) => setGstin(value.toUpperCase())} placeholder="15-character GSTIN" required={!noGstin} /><label className="flex items-center gap-2 self-end pb-3 text-sm font-bold"><input type="checkbox" checked={noGstin} onChange={(event) => setNoGstin(event.target.checked)} /> Showroom has no GSTIN</label>{noGstin && <div className="sm:col-span-2"><Field label="Reason for no GSTIN" value={noGstinReason} onChange={setNoGstinReason} placeholder="Explain why GSTIN is unavailable" required /></div>}<Field label="Expected opening date" type="date" value={openingDate} onChange={setOpeningDate} required /></div></FormCard><FormCard icon={<UserRound className="h-5 w-5" />} title="Franchisee owner" hint="After submission, Kurchi sends this owner a secure link to set their own password and enter their dashboard."><div className="grid gap-3 sm:grid-cols-2"><Field label="Owner name" value={owner} onChange={setOwner} placeholder="Full name" required /><Field label="Mobile number" value={phone} onChange={setPhone} placeholder="+91 98XXX XXXXX" required /><div className="sm:col-span-2"><Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="Owner email for first-time password setup" required /></div></div></FormCard><button disabled={!showroomReady} onClick={() => setStep(1)} className="inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:opacity-40">Next: choose BOQ <ArrowRight className="h-4 w-4" /></button></section>}
 
-    {step === 1 && <section className="mt-5 space-y-5"><div className="grid gap-3 sm:grid-cols-2"><Choice active={mode === "STANDARD"} title="Standard BOQ" text="Choose an approved Kurchi BOQ. Its products and quantities are fixed." onClick={() => setMode("STANDARD")} /><Choice active={mode === "MODULAR"} title="Modular BOQ" text="Use the Kurchi catalogue and enter only the quantity needed for each product." onClick={() => setMode("MODULAR")} /></div><FormCard icon={<CheckCircle2 className="h-5 w-5" />} title={mode === "STANDARD" ? "Standard BOQ" : "Set quantities"} hint={mode === "STANDARD" ? "Select the approved BOQ to use for this showroom." : "Every catalogue product is available. Set 0 for products not needed."}>{mode === "STANDARD" && !standardKit ? <p className="rounded-2xl bg-muted p-4 text-sm text-muted-foreground">Kurchi Admin needs to create a Standard BOQ before Ola can continue.</p> : <>{mode === "STANDARD" && <label className="mb-4 block text-sm font-bold">Choose Standard BOQ<select value={standardKit?.id ?? ""} onChange={(event) => setStandardKitId(event.target.value)} className="mt-1.5 min-h-12 w-full rounded-xl border bg-background px-3 text-sm font-medium">{standardKits.map((kit) => <option key={kit.id} value={kit.id}>{kit.name} · v{kit.version}</option>)}</select></label>}<div className="mt-1 divide-y rounded-2xl border">{lines.map((line) => <div key={line.productId} className="flex items-center justify-between gap-3 px-4 py-3"><div><p className="font-bold">{line.name}</p><p className="mt-1 text-xs text-muted-foreground">{line.zone} · {formatINR(line.price)} each</p></div>{mode === "MODULAR" ? <label className="flex shrink-0 items-center gap-2 text-sm font-bold">Qty <input type="number" min={0} step={1} inputMode="numeric" value={line.qty} onChange={(event) => setQuantity(line.productId, event.target.value)} className="h-10 w-20 rounded-xl border bg-background px-2 text-right" /></label> : <span className="min-w-24 text-right text-sm font-extrabold">{line.qty} · {formatINR(line.total)}</span>}</div>)}</div>{mode === "MODULAR" && products.length === 0 && <p className="mt-4 rounded-2xl bg-muted p-4 text-sm text-muted-foreground">Kurchi Admin needs to add catalogue products before a Modular BOQ can be made.</p>}{hasUnpricedLine && <p className="mt-4 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm text-foreground">One or more selected products does not have a selling price. Kurchi Admin needs to add the price in the catalogue before payment can be collected.</p>}<div className="mt-5 flex items-end justify-between rounded-2xl bg-muted/60 p-4"><div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">BOQ total</p><p className="mt-1 text-2xl font-extrabold">{formatINR(total)}</p></div><p className="max-w-48 text-right text-xs text-muted-foreground">{mode === "MODULAR" ? "Only quantities can be edited." : "Fixed product list and quantities."}</p></div></>}</FormCard><div className="flex gap-2"><button onClick={() => setStep(0)} className="inline-flex min-h-12 items-center gap-1 rounded-xl border px-4 text-sm font-bold"><ChevronLeft className="h-4 w-4" /> Back</button><button disabled={!hasBoq || hasUnpricedLine} onClick={() => setStep(2)} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:opacity-40">Next: payment <ArrowRight className="h-4 w-4" /></button></div></section>}
+{step === 1 && <section className="mt-5 space-y-5"><FormCard icon={<CheckCircle2 className="h-5 w-5" />} title="Choose your BOQ" hint="Select a BOQ created by Kurchi Admin to view its items and price."><div className="grid gap-3 sm:grid-cols-2">{kits.map((kit) => <Choice key={kit.id} active={selectedKit?.id === kit.id} title={kit.name} text={`${kit.description || "Kurchi BOQ"} · ${kit.lines.length} items`} onClick={() => { setKitId(kit.id); setQuantities({}); setMode(kit.mode ?? "STANDARD"); }} />)}</div>{kits.length === 0 && <p className="text-sm text-muted-foreground">No active BOQs yet. Ask Kurchi Admin to create one.</p>}</FormCard><div className="grid gap-3 sm:grid-cols-2"><Choice active={mode === "STANDARD"} title="Standard BOQ" text="Use the selected BOQ with fixed quantities. Its products and quantities cannot be changed." onClick={() => setMode("STANDARD")} /><Choice active={mode === "MODULAR"} title="Modular BOQ" text="Keep the selected BOQ products and adjust their quantities." onClick={() => setMode("MODULAR")} /></div><FormCard icon={<CheckCircle2 className="h-5 w-5" />} title={selectedKit?.name ?? "BOQ details"} hint={mode === "STANDARD" ? "The selected BOQ products and quantities are fixed." : "Adjust only the quantities in this BOQ. Set 0 for products not needed."}>{!selectedKit ? <p className="rounded-2xl bg-muted p-4 text-sm text-muted-foreground">Select a BOQ above to view its products.</p> : <><div className="mt-1 divide-y rounded-2xl border">{lines.map((line) => <div key={line.productId} className="flex items-center justify-between gap-3 px-4 py-3"><div><p className="font-bold">{line.name}</p><p className="mt-1 text-xs text-muted-foreground">{line.zone} · {formatINR(line.price)} each</p></div>{mode === "MODULAR" ? <label className="flex shrink-0 items-center gap-2 text-sm font-bold">Qty <input type="number" min={0} step={1} inputMode="numeric" value={line.qty} onChange={(event) => setQuantity(line.productId, event.target.value)} className="h-10 w-20 rounded-xl border bg-background px-2 text-right" /></label> : <span className="min-w-24 text-right text-sm font-extrabold">{line.qty} · {formatINR(line.total)}</span>}</div>)}</div>{mode === "MODULAR" && products.length === 0 && <p className="mt-4 rounded-2xl bg-muted p-4 text-sm text-muted-foreground">Kurchi Admin needs to add catalogue products before a Modular BOQ can be made.</p>}{hasUnpricedLine && <p className="mt-4 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm text-foreground">One or more selected products does not have a selling price. Kurchi Admin needs to add the price in the catalogue before payment can be collected.</p>}<div className="mt-5 flex items-end justify-between rounded-2xl bg-muted/60 p-4"><div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">BOQ total</p><p className="mt-1 text-2xl font-extrabold">{formatINR(total)}</p></div><p className="max-w-48 text-right text-xs text-muted-foreground">{mode === "MODULAR" ? "Only quantities can be edited." : "Fixed product list and quantities."}</p></div></>}</FormCard><div className="flex gap-2"><button onClick={() => setStep(0)} className="inline-flex min-h-12 items-center gap-1 rounded-xl border px-4 text-sm font-bold"><ChevronLeft className="h-4 w-4" /> Back</button><button disabled={!selectedKit || !hasBoq || hasUnpricedLine} onClick={() => setStep(2)} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:opacity-40">Next: payment <ArrowRight className="h-4 w-4" /></button></div></section>}
 
-    {step === 2 && <section className="mt-5 space-y-5"><FormCard icon={<CreditCard className="h-5 w-5" />} title="Share payment details" hint="Accounts will verify this before the project reaches Kurchi Admin."><div className="rounded-2xl bg-muted/60 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Approved BOQ total</p>{mode === "STANDARD" && standardKit && <p className="mt-1 text-sm font-bold">{standardKit.name} · v{standardKit.version}</p>}<p className="mt-1 text-3xl font-extrabold">{formatINR(total)}</p></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Field label="Amount paid" type="number" value={amount} onChange={setAmount} placeholder="Enter amount" required /><div className="rounded-xl border bg-muted/50 px-3 py-2"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Amount paid</p><p className="mt-1 text-xl font-extrabold">{percentage}%</p><p className="text-xs text-muted-foreground">of the selected BOQ</p></div><div className="sm:col-span-2"><Field label="UTR / transaction reference" value={reference} onChange={setReference} placeholder="Example: HDFC123456789" required /></div><label className="sm:col-span-2 block text-sm font-bold">Payment screenshot <span className="font-normal text-muted-foreground">(optional)</span><input type="file" accept="image/*,.pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} className="mt-1.5 block w-full rounded-xl border bg-background p-2 text-sm" /><span className="mt-1 block text-xs font-normal text-muted-foreground">{proofFile ? `${proofFile.name} will upload securely with this payment.` : "You can add this later; the UTR is enough for Accounts to verify now."}</span></label></div></FormCard><div className="flex gap-2"><button onClick={() => setStep(1)} disabled={submitting} className="inline-flex min-h-12 items-center gap-1 rounded-xl border px-4 text-sm font-bold disabled:opacity-40"><ChevronLeft className="h-4 w-4" /> Back</button><button disabled={!paymentReady || !hasBoq || hasUnpricedLine || submitting} onClick={submit} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:opacity-40">{submitting ? "Saving payment…" : <>Send payment to Accounts <ArrowRight className="h-4 w-4" /></>}</button></div></section>}
+    {step === 2 && <section className="mt-5 space-y-5"><FormCard icon={<CreditCard className="h-5 w-5" />} title="Share payment details" hint="Accounts will verify this before the project reaches Kurchi Admin."><div className="rounded-2xl bg-muted/60 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Approved BOQ total</p>{selectedKit && <p className="mt-1 text-sm font-bold">{selectedKit.name} · v{selectedKit.version}</p>}<p className="mt-1 text-3xl font-extrabold">{formatINR(total)}</p></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Field label="Amount paid" type="number" value={amount} onChange={setAmount} placeholder="Enter amount" required /><div className="rounded-xl border bg-muted/50 px-3 py-2"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Amount paid</p><p className="mt-1 text-xl font-extrabold">{percentage}%</p><p className="text-xs text-muted-foreground">of the selected BOQ</p></div><div className="sm:col-span-2"><Field label="UTR / transaction reference" value={reference} onChange={setReference} placeholder="Example: HDFC123456789" required /></div><label className="sm:col-span-2 block text-sm font-bold">Payment screenshot <span className="font-normal text-muted-foreground">(optional)</span><input type="file" accept="image/*,.pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} className="mt-1.5 block w-full rounded-xl border bg-background p-2 text-sm" /><span className="mt-1 block text-xs font-normal text-muted-foreground">{proofFile ? `${proofFile.name} will upload securely with this payment.` : "You can add this later; the UTR is enough for Accounts to verify now."}</span></label></div></FormCard><div className="flex gap-2"><button onClick={() => setStep(1)} disabled={submitting} className="inline-flex min-h-12 items-center gap-1 rounded-xl border px-4 text-sm font-bold disabled:opacity-40"><ChevronLeft className="h-4 w-4" /> Back</button><button disabled={!paymentReady || !hasBoq || hasUnpricedLine || submitting} onClick={submit} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:opacity-40">{submitting ? "Saving payment…" : <>Send payment to Accounts <ArrowRight className="h-4 w-4" /></>}</button></div></section>}
   </div>;
 }
 

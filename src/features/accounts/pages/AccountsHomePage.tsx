@@ -1,8 +1,11 @@
 import { Link } from "react-router-dom";
+import { useRef, useState } from "react";
 import { CheckCircle2, CircleDollarSign, FileText, IndianRupee, Printer, Receipt, ShieldCheck, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo, receivablesAgeing } from "@/data/repo";
-import { useDb } from "@/data/store";
+import { commit, useDb } from "@/data/store";
+import { sharedWorkspaceStatus, waitForSharedWorkspaceSave } from "@/data/cloudSync";
+import { toast } from "sonner";
 import { formatCompactINR, formatINR } from "@/lib/money";
 import { KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS } from "@/lib/rules";
 import * as act from "@/data/actions";
@@ -10,9 +13,49 @@ import { useAction } from "@/lib/useAction";
 import { printTaxInvoice } from "@/lib/printInvoice";
 
 export default function AccountsHomePage() {
-  useDb(); const { user } = useAuth(); const run = useAction(); if (!user) return null;
+  useDb(); const { user } = useAuth(); const run = useAction();
+  const [savingApproval, setSavingApproval] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<string[]>([]);
+  const approving = useRef(false);
+  const pendingDecisions = useRef<Record<string, "APPROVE" | "DENY" | "HOLD">>({});
+  if (!user) return null;
   const projects = repo.projects(user); const invoices = repo.invoices(); const notifications = repo.notifications(user).slice(0, 6);
-  const approvals = projects.filter((p) => p.initialPayment?.status === "PENDING_VERIFICATION");
+  const approvals = projects.filter((p) => ["PENDING_VERIFICATION", "ON_HOLD"].includes(p.initialPayment?.status ?? "") || pendingApprovals.includes(p.id));
+  const approvePayment = async (projectId: string, requestedDecision: "APPROVE" | "DENY" | "HOLD" = "APPROVE") => {
+    if (approving.current) return;
+    const decision = pendingDecisions.current[projectId] ?? requestedDecision;
+    let reason = "";
+    if (!pendingDecisions.current[projectId] && decision !== "APPROVE") {
+      const answer = window.prompt(decision === "DENY" ? "Why are you denying this payment? Ola will see this reason." : "Why is this payment on hold? Ola will see this reason.");
+      if (answer === null) return;
+      reason = answer.trim();
+      if (!reason) { toast.error("A reason is required"); return; }
+    }
+    approving.current = true;
+    setSavingApproval(projectId);
+    try {
+      if (!sharedWorkspaceStatus.connected) throw new Error("The shared workspace is not connected. Reconnect before approving this payment.");
+      const project = repo.projectById(user, projectId);
+      if (!project?.initialPayment) throw new Error("Payment request not found. Refresh the page.");
+      if (pendingDecisions.current[projectId]) {
+        commit(); // Retry the shared save, not the receipt or approval action.
+      } else if (["PENDING_VERIFICATION", "ON_HOLD"].includes(project.initialPayment.status)) {
+        if (decision === "HOLD") act.holdInitialPayment(user, projectId, reason);
+        else act.verifyInitialPayment(user, projectId, decision === "APPROVE", reason);
+        pendingDecisions.current[projectId] = decision;
+      } else throw new Error("This payment is no longer waiting for approval. Refresh the page.");
+      setPendingApprovals((current) => [...new Set([...current, projectId])]);
+      await waitForSharedWorkspaceSave();
+      setPendingApprovals((current) => current.filter((id) => id !== projectId));
+      delete pendingDecisions.current[projectId];
+      toast.success(decision === "APPROVE" ? "Payment approved" : decision === "DENY" ? "Payment denied" : "Payment put on hold", { description: decision === "APPROVE" ? "Kurchi Admin can now accept this showroom." : "Ola has been notified. Admin cannot start this showroom." });
+    } catch (error) {
+      toast.error("Approval not confirmed", { description: error instanceof Error ? error.message : "Please retry the approval." });
+    } finally {
+      approving.current = false;
+      setSavingApproval(null);
+    }
+  };
   const shipments = repo.consignments().filter((c) => c.status === "READY");
   const eways = repo.consignments().filter((c) => c.status !== "DELIVERED" && !c.ewayBillNo && KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS);
   const openInvoices = invoices.filter((i) => i.status !== "PAID"); const outstanding = Object.values(receivablesAgeing(user)).reduce((a, b) => a + b, 0);
@@ -22,7 +65,7 @@ export default function AccountsHomePage() {
     <section className="rounded-[2rem] bg-rail p-6 text-rail-foreground sm:p-8"><p className="text-xs font-bold uppercase tracking-[.16em] text-rail-muted">Kurchi Accounts</p><div className="mt-3 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Your work for today</h1><p className="mt-2 max-w-2xl text-sm text-rail-muted">Approve payments, bill packed shipments, complete e-way details and record collections—one task at a time.</p></div><b className="rounded-2xl bg-white/10 px-4 py-3">{taskCount} task{taskCount === 1 ? "" : "s"} waiting</b></div><div className="mt-6 flex flex-wrap gap-2"><a href="/accounts/invoices?action=raise" className="min-h-11 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-rail">Create invoice</a><a href="/accounts/payments" className="min-h-11 rounded-xl border border-white/25 px-4 py-3 text-sm font-extrabold text-rail-foreground">Record payment</a><a href="/accounts/cost-centres" className="min-h-11 rounded-xl border border-white/25 px-4 py-3 text-sm font-extrabold text-rail-foreground">Add expense</a></div></section>
     <Panel step="Inbox" title="Requests sent to Accounts" hint="Open a request and complete the task from the correct workspace.">{notifications.length ? <div className="space-y-2">{notifications.map((notification) => <a key={notification.id} href={notification.link ?? "/accounts"} className="block rounded-2xl border bg-background p-4 transition hover:border-primary/40 hover:bg-primary/[.03]"><div className="flex items-start justify-between gap-3"><div><p className="font-extrabold">{notification.title}</p><p className="mt-1 text-sm text-muted-foreground">{notification.detail}</p></div><span className="shrink-0 text-sm font-extrabold text-primary">Open →</span></div></a>)}</div> : <Empty icon={<CheckCircle2/>} title="No new requests" hint="When Admin or Ola sends Accounts work, it will appear here with an Open button."/>}</Panel>
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric icon={<ShieldCheck/>} label="Payment approvals" value={approvals.length} note="Ola advances"/><Metric icon={<Receipt/>} label="Invoices to create" value={invoicesToCreate.length} note="packed shipments"/><Metric icon={<Truck/>} label="E-way bills" value={eways.length} note="before dispatch"/><Metric icon={<IndianRupee/>} label="Outstanding" value={formatCompactINR(outstanding)} note={`${openInvoices.length} open invoices`}/></section>
-    <Panel step="Step 1" title="Approve payments" hint="After approval, the showroom moves to Kurchi Admin.">{approvals.length ? approvals.map((p) => <article key={p.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-background p-4"><div><b>{p.name}</b><p className="mt-1 text-sm text-muted-foreground">{formatINR(p.initialPayment!.amount)} · {p.initialPayment!.percentage}% · UTR {p.initialPayment!.reference}</p></div><button onClick={() => run(() => act.verifyInitialPayment(user, p.id, true), "Payment approved", "Kurchi Admin can now start this showroom.")} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground">Approve payment</button></article>) : <Empty icon={<CheckCircle2/>} title="No payment approval waiting" hint="New Ola payment references appear here automatically."/>}</Panel>
+<Panel step="Step 1" title="Approve payments" hint="After approval, the showroom moves to Kurchi Admin.">{approvals.length ? approvals.map((p) => <article key={p.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-background p-4"><div><b>{p.name}</b><p className="mt-1 text-sm text-muted-foreground">{formatINR(p.initialPayment!.amount)} · {p.initialPayment!.percentage}% · UTR {p.initialPayment!.reference}</p>{p.initialPayment!.status === "ON_HOLD" && <p className="mt-2 text-sm font-bold text-primary">On hold: {p.initialPayment!.holdReason}</p>}{p.initialPayment!.status === "REJECTED" && <p className="mt-2 text-sm font-bold text-primary">Denied: {p.initialPayment!.rejectionReason}</p>}</div><div className="flex flex-wrap gap-2"><button disabled={Boolean(savingApproval)} onClick={() => void approvePayment(p.id)} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground">{savingApproval === p.id ? "Saving approval…" : pendingApprovals.includes(p.id) ? "Retry saving decision" : "Approve payment"}</button>{!pendingApprovals.includes(p.id) && <><button disabled={Boolean(savingApproval)} onClick={() => void approvePayment(p.id, "DENY")} className="min-h-11 rounded-xl border px-4 text-sm font-bold text-destructive">Deny payment</button><button disabled={Boolean(savingApproval)} onClick={() => void approvePayment(p.id, "HOLD")} className="min-h-11 rounded-xl border px-4 text-sm font-bold">Put on hold</button></>}</div></article>) : <Empty icon={<CheckCircle2/>} title="No payment approval waiting" hint="New Ola payment references appear here automatically."/>}</Panel>
     <Panel step="Step 2" title="Create shipment invoices" hint="Each request shows the exact products and delivery method Admin selected.">{shipments.length ? <div className="space-y-3">{shipments.map((s) => { const p = projects.find((x) => x.id === s.projectId); const i = s.invoiceId ? invoices.find((x) => x.id === s.invoiceId) : undefined; const selected = s.invoiceRequestItemIds?.map((id) => repo.itemById(id)?.name).filter(Boolean); const delivery = s.deliveryMethod === "DIRECT_TRUCK" ? "Direct truck" : "Delivery partner"; return <article key={s.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-background p-4"><div><b>{p?.site.city ?? "Showroom"} · {formatINR(s.taxableValue)}</b><p className="mt-1 text-sm text-muted-foreground">{selected?.length ? `Admin selected: ${selected.join(", ")}` : "All packed products will be billed."}</p><p className="mt-1 text-xs font-bold text-primary">Delivery: {delivery}</p></div>{s.billingExempt ? <span className="rounded-xl bg-muted px-4 py-3 text-sm font-extrabold">Replacement shipment · delivery challan only</span> : i ? <div className="flex gap-2"><button onClick={() => printTaxInvoice(i, p, p ? repo.clientById(p.clientId) : null)} className="min-h-11 rounded-xl border px-4 text-sm font-bold"><Printer className="mr-1 inline h-4 w-4"/>Print</button><Link to="/accounts/eway" className="inline-flex min-h-11 items-center rounded-xl border px-4 text-sm font-bold">E-way bill</Link></div> : <button onClick={() => run(() => act.createShipmentBillingPack(user, s.id), "Shipment documents created", "The delivery challan is ready. A GST invoice is created only for new sale items.")} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground">Create shipment documents</button>}</article>; })}</div> : <Empty icon={<Receipt/>} title="No shipment waiting for billing" hint="Production creates a billing task here as soon as it packs a shipment."/>}</Panel>
     <section className="grid gap-5 lg:grid-cols-2"><Panel step="Step 3" title="Complete e-way bills" hint="Required for applicable shipments.">{eways.length ? <Link to="/accounts/eway" className="block rounded-2xl bg-primary/10 p-4 font-extrabold text-primary">Open {eways.length} e-way bill task{eways.length === 1 ? "" : "s"}</Link> : <a href="/accounts/eway" className="block rounded-2xl bg-muted/55 p-4 text-sm font-bold">Open e-way bill workspace</a>}</Panel><Panel step="Step 4" title="Collections and costs" hint="Keep showroom money current."><div className="grid grid-cols-2 gap-2"><Quick to="/accounts/payments" icon={<CircleDollarSign/>} text="Record payment"/><Quick to="/accounts/cost-centres" icon={<WalletCards/>} text="Add project expense"/></div></Panel></section>
     <Panel step="Recent" title="Invoices already raised" hint="Print any existing invoice or open the register.">{invoices.length ? <div className="divide-y">{invoices.slice(0, 4).map((i) => <div key={i.id} className="flex items-center justify-between gap-3 py-3"><div><b className="font-mono text-sm">{i.number}</b><p className="text-xs text-muted-foreground">{formatINR(i.netPayable)} · {i.status.replaceAll("_", " ").toLowerCase()}</p></div><button onClick={() => printTaxInvoice(i, projects.find((p) => p.id === i.projectId), repo.clientById(i.clientId))} className="rounded-lg border px-3 py-2 text-xs font-bold">Print</button></div>)}</div> : <Empty icon={<FileText/>} title="No invoices raised yet" hint="Invoices created above appear here."/>}</Panel>

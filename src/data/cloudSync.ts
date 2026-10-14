@@ -25,6 +25,16 @@ let generation = 0;
 let session = 0;
 let started = false;
 export const sharedWorkspaceStatus = { connected: false };
+let saveError: string | null = null;
+
+/** A workflow handoff is successful only after the shared server acknowledges it. */
+export async function waitForSharedWorkspaceSave() {
+  if (!ready || !sharedWorkspaceStatus.connected) throw new Error("The shared workspace is not connected. Wait for it to reconnect before sending to Accounts.");
+  const expectedSession = session;
+  await writeQueue;
+  if (!ready || expectedSession !== session) throw new Error("Your login changed before the request was saved. Sign in and retry.");
+  if (saveError) throw new Error(saveError);
+}
 
 function clean(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
@@ -128,7 +138,10 @@ export function connectSharedWorkspace(
         revision = remoteRevision;
         appliedRevision = remoteRevision;
         basePayload = clean(payload);
-        applyRemote(basePayload);
+        // Store callbacks mutate arrays/records in place. Never expose the
+        // merge baseline to them: otherwise a new record mutates both local
+        // and base and is incorrectly discarded as an unchanged value.
+        applyRemote(clean(basePayload));
         return;
       }
 
@@ -141,7 +154,7 @@ export function connectSharedWorkspace(
       const remote = clean(payload);
       basePayload = remote;
       appliedRevision = remoteRevision;
-      applyRemote(remote);
+      applyRemote(clean(remote));
       return;
     }
     const initial = clean(readLocal());
@@ -156,7 +169,12 @@ export function connectSharedWorkspace(
 }
 
 export function publishSharedWorkspace(readLocal: () => Record<string, unknown>, report: (message: string) => void) {
-  if (!firestore || !ready) return;
+  if (!firestore || !ready) {
+    saveError = "The shared workspace is not connected. This request has not reached Accounts.";
+    report(saveError);
+    return;
+  }
+  saveError = null;
   const reference = doc(firestore, COLLECTION, DOCUMENT);
   const expectedGeneration = generation;
   const expectedSession = session;
@@ -189,8 +207,9 @@ export function publishSharedWorkspace(readLocal: () => Record<string, unknown>,
       revision = result.nextRevision;
       appliedRevision = result.nextRevision;
       basePayload = result.payload;
-      applyWorkspace?.(result.payload);
-      report("Admin deleted workspace data. Unsaved edits from before that cleanup were discarded. Please review before editing again.");
+      applyWorkspace?.(clean(result.payload));
+      saveError = "Admin deleted workspace data. Unsaved edits from before that cleanup were discarded. Please review before editing again.";
+      report(saveError);
       return;
     }
     revision = Math.max(revision, result.nextRevision);
@@ -203,6 +222,7 @@ export function publishSharedWorkspace(readLocal: () => Record<string, unknown>,
     basePayload = result.payload;
     if (!same(localAfterWriteStarted, reconciledLocal)) applyWorkspace?.(reconciledLocal);
   }).catch(() => {
-    report("Shared workspace could not be saved. Changes remain on this device.");
+    saveError = "Shared workspace could not be saved. This request has not reached the other teams. Reconnect and retry.";
+    report(saveError);
   }).finally(() => { pendingWrites -= 1; });
 }

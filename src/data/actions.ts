@@ -8,8 +8,8 @@
 
 import { audit, commit, db, nextDocNumber, nextId, nextProjectCode, NOW, recomputeProject } from "./store";
 import type {
-  AppUser, BoqItem, ChangeOrder, Client, CreditNote, DocumentRecord, InventoryItem, PurchaseOrder, ScheduleTask, SellerProfile,
-  ItemStatus, Kit, Product, Programme, Project, Role, SnagSeverity, TicketCause,
+  AppUser, BoqItem, ChangeOrder, Client, CreditNote, DocumentRecord, InventoryItem, Kit, PurchaseOrder, ScheduleTask, SellerProfile,
+  ItemStatus, Product, Programme, Project, Role, SnagSeverity, TicketCause,
   TicketDecision, Vendor, VendorBill, SiteWorkStatus, CostEntry, OperationalStatus,
 } from "@/types";
 import {
@@ -17,6 +17,7 @@ import {
   canRaiseHandover, canSubmitTicket, taxMode, EWAY_BILL_THRESHOLD,
 } from "@/lib/rules";
 import { canTransition } from "@/lib/statuses";
+import { invoiceTax, roundMoney } from "@/lib/money";
 
 export class RuleError extends Error {
   constructor(message: string, public rules: string[] = []) {
@@ -226,6 +227,13 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
   if (actor.role === "CLIENT" && input.boqMode === "STANDARD" && !input.kitId) {
     throw new RuleError("Kurchi needs to create the Standard BOQ before continuing.");
   }
+  const selectedKit = db.kits.find((entry) => entry.id === input.kitId);
+  if (actor.role === "CLIENT" && (!selectedKit?.active || !selectedKit.lines.length)) {
+    throw new RuleError("Select an active BOQ created by Kurchi Admin.");
+  }
+  if (actor.role === "CLIENT" && Object.keys(input.quantities).some((id) => !selectedKit!.lines.some((line) => line.productId === id))) {
+    throw new RuleError("Only products in the selected BOQ can be ordered.");
+  }
   if (actor.role === "CLIENT" && input.boqMode === "MODULAR" && !Object.values(input.quantities).some((qty) => qty > 0)) {
     throw new RuleError("Set a quantity for at least one catalogue product.");
   }
@@ -314,7 +322,8 @@ export function createProjectFromKit(actor: AppUser, input: NewProjectInput) {
 
   if (sourceLines.length) {
     sourceLines.forEach((line, idx) => {
-      const qty = input.quantities[line.productId] ?? line.defaultQty;
+      const qty = actor.role === "CLIENT" && input.boqMode === "STANDARD"
+        ? line.defaultQty : input.quantities[line.productId] ?? line.defaultQty;
       if (qty <= 0) return;
       const product = db.products.find((p) => p.id === line.productId);
 
@@ -393,10 +402,12 @@ export function acceptOlaShowroom(actor: AppUser, projectId: string) {
 export function verifyInitialPayment(actor: AppUser, projectId: string, approved: boolean, note?: string) {
   if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can verify the initial payment.");
   const project = requireProject(projectId);
-  if (!project.initialPayment || project.initialPayment.status !== "PENDING_VERIFICATION") {
+  if (!project.initialPayment || !["PENDING_VERIFICATION", "ON_HOLD"].includes(project.initialPayment.status)) {
     throw new RuleError("There is no payment waiting for verification.");
   }
+  if (!approved && !note?.trim()) throw new RuleError("Enter a reason for denying this payment.");
   project.initialPayment.status = approved ? "VERIFIED" : "REJECTED";
+  project.initialPayment.holdReason = undefined;
   project.initialPayment.verifiedAt = now();
   project.initialPayment.verifiedBy = actor.name;
   project.initialPayment.rejectionReason = approved ? undefined : note?.trim() || "Payment reference needs correction.";
@@ -415,6 +426,42 @@ export function verifyInitialPayment(actor: AppUser, projectId: string, approved
 }
 
 /* ---------------------------------------------------------------- BOQ flow */
+
+export function holdInitialPayment(actor: AppUser, projectId: string, reason: string) {
+  if (actor.role !== "ACCOUNTS") throw new RuleError("Only Accounts can hold a payment request.");
+  const project = requireProject(projectId);
+  const payment = project.initialPayment;
+  if (!payment || !["PENDING_VERIFICATION", "ON_HOLD"].includes(payment.status)) throw new RuleError("This payment is no longer waiting for verification.");
+  if (!reason.trim()) throw new RuleError("Enter a reason for putting this payment on hold.");
+  payment.status = "ON_HOLD";
+  payment.holdReason = reason.trim();
+  payment.heldAt = now();
+  payment.heldBy = actor.name;
+  project.advanceReceivedPct = 0;
+  project.statusUpdatedAt = now();
+  notify("CLIENT", "Payment verification on hold", `${project.name}: ${payment.holdReason}`, `/portal/projects/${projectId}`);
+  audit(actor, `projects/${projectId}`, "UPDATE", `Payment put on hold by Accounts: ${payment.holdReason}`);
+  commit();
+}
+
+/** Correct a denied/held claim without creating another showroom or receipt. */
+export function resubmitInitialPayment(actor: AppUser, projectId: string, input: {
+  amount: number; reference: string; proofName?: string; proofUrl?: string;
+}) {
+  const project = requireProject(projectId);
+  if (actor.role !== "CLIENT" || actor.clientId !== project.clientId) throw new RuleError("Only the owning Ola team can correct this payment.");
+  if (!project.initialPayment || !["REJECTED", "ON_HOLD"].includes(project.initialPayment.status) || project.adminAcceptedAt) throw new RuleError("Only denied or held payments can be resubmitted before Admin acceptance.");
+  const amount = roundMoney(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || !input.reference.trim()) throw new RuleError("Enter a positive amount and the corrected UTR or payment reference.");
+  const percentage = project.totals.value > 0 ? Math.round(amount / project.totals.value * 10000) / 100 : 0;
+  project.initialPayment = { amount, percentage, reference: input.reference.trim(), proofName: input.proofName, proofUrl: input.proofUrl, submittedAt: now(), status: "PENDING_VERIFICATION" };
+  project.advanceReceivedPct = 0;
+  project.statusUpdatedAt = now();
+  notify("ACCOUNTS", "Corrected payment needs verification", `${project.name} · ₹${amount.toLocaleString("en-IN")} · UTR ${project.initialPayment.reference}`, "/accounts");
+  audit(actor, `projects/${projectId}`, "UPDATE", "Payment details corrected and resubmitted by Ola");
+  commit();
+  return project;
+}
 
 /**
  * Payment verification and Admin acceptance are the gates before production.
@@ -648,6 +695,24 @@ export function saveProgramme(actor: AppUser, programme: Programme) {
   if (idx >= 0) db.programmes[idx] = programme;
   else db.programmes.push(programme);
   audit(actor, `programmes/${programme.id}`, idx >= 0 ? "UPDATE" : "CREATE", programme.name);
+  commit();
+}
+
+/** Remove unused client records only; never orphan financial or access records. */
+export function deleteClient(actor: AppUser, clientId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can delete clients.");
+  const client = db.clients.find((entry) => entry.id === clientId);
+  if (!client) throw new RuleError("Client not found. Refresh the page.");
+  const dependencies: string[] = [];
+  if (db.projects.some((entry) => entry.clientId === clientId)) dependencies.push("projects");
+  if (db.invoices.some((entry) => entry.clientId === clientId)) dependencies.push("invoices");
+  if (db.payments.some((entry) => entry.clientId === clientId)) dependencies.push("payments");
+  if (db.programmes.some((entry) => entry.clientId === clientId)) dependencies.push("programmes");
+  if (db.vendors.some((entry) => entry.clientId === clientId)) dependencies.push("franchisee records");
+  if (db.users.some((entry) => entry.clientId === clientId)) dependencies.push("assigned users");
+  if (dependencies.length) throw new RuleError(`Cannot delete ${client.name}: linked to ${dependencies.join(", ")}. Remove or reassign linked records first.`);
+  db.clients = db.clients.filter((entry) => entry.id !== clientId);
+  audit(actor, `clients/${clientId}`, "VOID", `${client.name} deleted`);
   commit();
 }
 
@@ -909,8 +974,8 @@ export function completeRtsChecklist(
   if (!input.transporterName.trim() || !input.vehicleNo.trim() || !input.lrNumber.trim()) {
     throw new RuleError("Transporter, vehicle number and LR number are required.");
   }
-  if (input.deliveryMethod === "DIRECT_TRUCK" && !(input.driverName?.trim() && input.driverPhone?.trim() && input.driverLicenceNo?.trim())) {
-    throw new RuleError("Enter the direct-truck driver's name, mobile number and licence number.");
+  if (input.deliveryMethod === "DIRECT_TRUCK" && !(input.driverName?.trim() && input.driverPhone?.trim())) {
+    throw new RuleError("Enter the direct-truck driver's name and mobile number.");
   }
   const eta = new Date();
   eta.setDate(eta.getDate() + (input.deliveryMethod === "DIRECT_TRUCK" ? 2 : 4));
@@ -923,7 +988,6 @@ export function completeRtsChecklist(
     driverName: input.driverName?.trim() || undefined,
     driverPhone: input.driverPhone?.trim() || undefined,
     driverLicenceNo: input.driverLicenceNo?.trim().toUpperCase() || undefined,
-    eta: eta.toISOString(),
     rtsCheckedAt: now(),
   });
   audit(actor, `consignments/${consignmentId}`, "UPDATE", `RTS checklist complete · ${boxCounts.join(" + ")} boxes`);
@@ -1004,6 +1068,32 @@ export function markInTransit(actor: AppUser, consignmentId: string) {
   audit(actor, `consignments/${consignmentId}`, "STATUS_CHANGE", "Vehicle marked in transit");
   recomputeProject(c.projectId);
   commit();
+}
+
+export function startShipmentTransit(actor: AppUser, consignmentId: string, input: {
+  deliveryMethod: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY";
+  vehicleNo?: string; driverName?: string; driverPhone?: string; eta?: string; awbNumber?: string;
+}) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can start shipment transit.");
+  const shipment = db.consignments.find((entry) => entry.id === consignmentId);
+  if (!shipment || !["READY", "DISPATCHED"].includes(shipment.status)) throw new RuleError("Select a ready shipment that has not started transit.");
+  if (!["DIRECT_TRUCK", "THIRD_PARTY_DELIVERY"].includes(input.deliveryMethod)) throw new RuleError("Choose Direct truck or Delhivery.");
+  if (input.deliveryMethod === "DIRECT_TRUCK") {
+    if (!input.vehicleNo?.trim() || !input.driverName?.trim() || !/^\+?[\d\s-]{10,16}$/.test(input.driverPhone?.trim() ?? "")) throw new RuleError("Enter truck number, driver name and a valid driver phone number.");
+    if (!input.eta || !Number.isFinite(Date.parse(input.eta)) || Date.parse(input.eta) <= Date.now()) throw new RuleError("Enter a future expected delivery date and time.");
+  } else if (!/^\d{8,30}$/.test(input.awbNumber?.trim() ?? "")) throw new RuleError("Enter the Delhivery AWB number (8–30 digits).");
+  const patch = input.deliveryMethod === "DIRECT_TRUCK"
+    ? { deliveryMethod: input.deliveryMethod, vehicleNo: input.vehicleNo!.trim().toUpperCase(), driverName: input.driverName!.trim(), driverPhone: input.driverPhone!.trim(), eta: new Date(input.eta!).toISOString(), etaSource: "MANUAL" as const, awbNumber: undefined }
+    : { deliveryMethod: input.deliveryMethod, transporterName: "Delhivery", awbNumber: input.awbNumber!.trim(), eta: undefined, etaSource: "DELHIVERY" as const };
+  if (shipment.status === "READY") {
+    const project = requireProject(shipment.projectId);
+    const crates = db.crates.filter((crate) => shipment.crateIds.includes(crate.id));
+    const verdict = canDispatch({ project, crates, consignment: { ...shipment, ...patch } });
+    if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
+  }
+  Object.assign(shipment, patch);
+  if (shipment.status === "READY") dispatchConsignment(actor, consignmentId);
+  markInTransit(actor, consignmentId);
 }
 
 /* ------------------------------------------------------------------ site */
@@ -1357,18 +1447,19 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   if (!billableEntries.length) throw new RuleError("This replacement shipment needs only its delivery challan; the original sale has already been invoiced.");
   if (billableEntries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
   const lines = billableEntries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
-  const taxable = lines.reduce((sum, line) => sum + line.taxableValue, 0);
+  lines.forEach((line) => { line.taxableValue = roundMoney(line.taxableValue); });
+  const taxable = roundMoney(lines.reduce((sum, line) => sum + line.taxableValue, 0));
   // Bill-to may differ from the showroom. Tax follows the declared place of supply.
   const mode = taxMode(project.site.state, db.sellerProfile.state);
-  const gst = Math.round(taxable * 0.18);
+  const tax = invoiceTax(taxable, mode);
   const due = new Date(NOW); due.setDate(due.getDate() + 30);
-  const netPayable = taxable + gst;
+  const netPayable = tax.total;
   const advanceApplied = Math.min(netPayable, availableVerifiedAdvance(project));
   const invoice = {
     id: nextId("inv"), number: nextDocNumber("INV"), projectId: project.id, clientId: project.clientId,
     placeOfSupplyState: project.site.state, lines, taxMode: mode,
-    cgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0, sgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0, igst: mode === "IGST" ? gst : 0,
-    taxableValue: taxable, total: taxable + gst, retentionPct: 0, retentionAmount: 0, netPayable,
+    cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst,
+    taxableValue: taxable, total: tax.total, retentionPct: 0, retentionAmount: 0, netPayable,
     challanIds: [consignment.challanId], issuedAt: now(), dueDate: due.toISOString(), advanceApplied, amountReceived: advanceApplied,
     status: advanceApplied >= netPayable ? "PAID" as const : advanceApplied ? "PART_PAID" as const : "ISSUED" as const,
   };
@@ -1451,18 +1542,21 @@ export function issueInvoice(
     if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
   }
 
-  const items = db.items.filter((i) => i.projectId === projectId);
+  const items = db.items.filter((i) => i.projectId === projectId && i.status !== "CANCELLED");
+  if (!Number.isFinite(opts.percent) || opts.percent <= 0 || opts.percent > 100) throw new RuleError("Enter an invoice percentage between 0 and 100.");
+  if (!items.length) throw new RuleError("No active BOQ items to invoice.");
   const missingHsn = items.filter((i) => !i.hsnCode);
   if (missingHsn.length) throw new RuleError(`${missingHsn.length} line(s) have no HSN code.`, ["FN-03"]);
 
-  const taxable = Math.round((project.totals.value * opts.percent) / 100);
+  const boqValue = roundMoney(items.reduce((sum, item) => sum + roundMoney(item.pricing.finalPrice * item.qty), 0));
+  const taxable = roundMoney((boqValue * opts.percent) / 100);
   const previouslyBilled = db.invoices.filter((invoice) => invoice.projectId === projectId).reduce((sum, invoice) => sum + invoice.taxableValue - creditedAmount(invoice.id), 0);
-  if (previouslyBilled + taxable > project.totals.value) throw new RuleError("This would bill more than the approved BOQ value. Use a credit note or choose the remaining value.", ["FN-06"]);
+  if (roundMoney(previouslyBilled + taxable) > boqValue) throw new RuleError("This would bill more than the approved BOQ value. Use a credit note or choose the remaining value.", ["FN-06"]);
   // The tax split must use the same place of supply printed on the invoice.
   const mode = taxMode(project.site.state, db.sellerProfile.state);
-  const gst = Math.round(taxable * 0.18);
-  const retention = Math.round((taxable * project.retentionPct) / 100);
-  const netPayable = taxable + gst - retention;
+  const tax = invoiceTax(taxable, mode);
+  const retention = roundMoney((taxable * project.retentionPct) / 100);
+  const netPayable = roundMoney(tax.total - retention);
   const advanceApplied = Math.min(netPayable, availableVerifiedAdvance(project));
   const due = new Date(NOW);
   due.setDate(due.getDate() + 30);
@@ -1472,7 +1566,7 @@ export function issueInvoice(
         hsn: item.hsnCode,
         qty: item.qty,
         rate: item.pricing.finalPrice,
-        taxableValue: item.pricing.finalPrice * item.qty,
+        taxableValue: roundMoney(item.pricing.finalPrice * item.qty),
         gstRate: 18,
       }))
     : [{
@@ -1492,11 +1586,11 @@ export function issueInvoice(
     placeOfSupplyState: project.site.state,
     lines,
     taxMode: mode,
-    cgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0,
-    sgst: mode === "CGST_SGST" ? Math.round(gst / 2) : 0,
-    igst: mode === "IGST" ? gst : 0,
+    cgst: tax.cgst,
+    sgst: tax.sgst,
+    igst: tax.igst,
     taxableValue: taxable,
-    total: taxable + gst,
+    total: tax.total,
     retentionPct: project.retentionPct,
     retentionAmount: retention,
     netPayable,
@@ -1682,7 +1776,7 @@ export function blankKit(): Kit {
   return { id: nextId("kit"), name: "", description: "", version: 1, active: true, mode: "STANDARD", lines: [] };
 }
 
-/** Reusable Standard BOQ kits. Modular projects always use the full catalogue. */
+/** Reusable BOQs shown in Ola's chooser. */
 export function saveKit(actor: AppUser, kit: Kit) {
   if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage BOQ kits.");
   if (!kit.name.trim()) throw new RuleError("Give this BOQ kit a name.");

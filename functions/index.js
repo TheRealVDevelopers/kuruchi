@@ -29,6 +29,7 @@ initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 5 });
 Object.assign(exports, require("./workspaceMaintenance"));
 exports.saveMyWorkspaceProfile = require("./workspaceProfile").saveMyWorkspaceProfile;
+Object.assign(exports, require("./delhiveryTracking"));
 
 const SLA_MS = 48 * 60 * 60 * 1000;
 

@@ -231,6 +231,12 @@ export function ClientsPage() {
   const programmes = repo.programmes();
   const projects = repo.projects(user);
 
+  const removeClient = (client: Client) => {
+    if (!window.confirm(`Delete "${client.name}"? This cannot be undone. Clients with linked records cannot be deleted.`)) return;
+    const ok = run(() => act.deleteClient(user, client.id), "Client deleted");
+    if (ok && editing?.id === client.id) setEditing(null);
+  };
+
   return (
     <>
       <PageHeader
@@ -258,6 +264,7 @@ export function ClientsPage() {
           client={editing}
           isNew={!clients.some((c) => c.id === editing.id)}
           onCancel={() => setEditing(null)}
+          onDelete={() => removeClient(editing)}
           onSave={(c) => {
             const ok = run(() => act.saveClient(user, c), `${c.name || "Client"} saved`);
             if (ok) setEditing(null);
@@ -293,13 +300,13 @@ export function ClientsPage() {
                     {c.contactName} · {c.contactPhone} · {c.contactEmail}
                   </p>
                 </div>
-                <button
+                <div className="flex gap-2"><button
                   type="button"
                   onClick={() => setEditing({ ...c })}
                   className="shrink-0 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-muted"
                 >
                   Edit
-                </button>
+                </button><button type="button" onClick={() => removeClient(c)} className="shrink-0 rounded-md border border-destructive/30 px-3 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10">Delete</button></div>
               </div>
 
               <div className="mt-4 space-y-2 border-t pt-3">
@@ -340,12 +347,13 @@ export function ClientsPage() {
 }
 
 function ClientForm({
-  client, isNew, onSave, onCancel,
-}: { client: Client; isNew: boolean; onSave: (c: Client) => void; onCancel: () => void }) {
+  client, isNew, onSave, onCancel, onDelete,
+}: { client: Client; isNew: boolean; onSave: (c: Client) => void; onCancel: () => void; onDelete: () => void }) {
   const [c, setC] = useState(client);
   return (
     <EditPanel
       title={isNew ? "New client" : `Edit ${client.name}`}
+      onDelete={isNew ? undefined : onDelete}
       onSubmit={() => onSave(c)}
       onCancel={onCancel}
       submitLabel={isNew ? "Add client" : "Save changes"}
@@ -416,7 +424,7 @@ export function KitsPage() {
       <PageHeader
         eyebrow="Masters"
         title="BOQ kits"
-        description="Create multiple Standard BOQ kits and choose the right one for each project. Each kit has its own products and fixed quantities."
+        description="Create Sales, Service or other BOQs. Ola can view and select any active BOQ, keeping fixed quantities or adjusting quantities in Modular mode."
         actions={<AddButton label="Create BOQ kit" onClick={() => setEditing(act.blankKit())} />}
       />
 
