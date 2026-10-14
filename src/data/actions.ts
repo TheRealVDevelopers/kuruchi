@@ -927,7 +927,7 @@ export function createDispatchBatch(
   });
   items.forEach((item, index) => { if (!item) return; item.qtyReadyToPack = Math.max(0, (item.qtyReadyToPack || item.qty) - input.allocations[index].qty); item.status = "PACKED"; item.statusUpdatedAt = now(); item.crateId = item.crateId ?? crateId; item.consignmentId = consignmentId; });
   audit(actor, `consignments/${consignmentId}`, "CREATE", `Packing batch ${input.crateCode.trim().toUpperCase()} created`);
-  notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, "/accounts");
+  notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, `/accounts#shipment-${encodeURIComponent(consignmentId)}`);
   recomputeProject(input.projectId);
   commit();
   return consignmentId;
@@ -957,7 +957,7 @@ export function requestShipmentInvoice(actor: AppUser, consignmentId: string, it
   consignment.deliveryMethod = deliveryMethod;
   const project = requireProject(consignment.projectId);
   const deliveryLabel = deliveryMethod === "DIRECT_TRUCK" ? "direct truck" : "delivery partner";
-  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"} · ${deliveryLabel}.`, "/accounts");
+  notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"} · ${deliveryLabel}.`, `/accounts#shipment-${encodeURIComponent(consignmentId)}`);
   audit(actor, `consignments/${consignmentId}`, "UPDATE", `Invoice requested for ${selected.length} shipment lines · ${deliveryLabel}`);
   commit();
 }
@@ -1079,7 +1079,7 @@ export function completeRtsChecklist(
     rtsCheckedAt: now(),
   });
   audit(actor, `consignments/${consignmentId}`, "UPDATE", `RTS checklist complete · ${boxCounts.join(" + ")} boxes`);
-  notify("ACCOUNTS", "Shipment ready for documents", `${requireProject(consignment.projectId).site.city}: create its challan and partial invoice.`, "/accounts");
+  notify("ACCOUNTS", "Shipment ready for documents", `${requireProject(consignment.projectId).site.city}: create its challan and partial invoice.`, `/accounts#shipment-${encodeURIComponent(consignmentId)}`);
   commit();
   return consignment;
 }

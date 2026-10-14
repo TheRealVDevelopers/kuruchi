@@ -108,7 +108,9 @@ export const repo = {
   documents: (projectId?: string) =>
     projectId ? db.documents.filter((d) => d.projectId === projectId) : db.documents,
   notifications: (user: AppUser | null) =>
-    user ? db.notifications.filter((n) => n.role === "ALL" || n.role === user.role) : [],
+    user ? db.notifications.filter((n) => n.role === "ALL" || n.role === user.role).map((n) =>
+      n.role === "ACCOUNTS" && (!n.link || n.link === "/accounts") && ["Invoice requested by Admin", "Shipment ready for billing", "Shipment ready for documents"].includes(n.title)
+        ? { ...n, link: "/accounts#shipment-invoices" } : n) : [],
 
   crates: (projectId?: string) =>
     projectId ? db.crates.filter((c) => c.projectId === projectId) : db.crates,
