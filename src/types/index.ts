@@ -245,10 +245,13 @@ export interface Project {
     /** Firebase Storage URL for the payment proof, when one was uploaded. */
     proofUrl?: string;
     submittedAt: string;
-    status: "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
+    status: "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED" | "ON_HOLD";
     verifiedAt?: string;
     verifiedBy?: string;
     rejectionReason?: string;
+    holdReason?: string;
+    heldAt?: string;
+    heldBy?: string;
   };
   advanceRequiredPct?: number;
   advanceReceivedPct?: number;
@@ -379,6 +382,12 @@ export interface Consignment {
   driverLicenceNo?: string;
   /** Direct truck is Kurchi-arranged; delivery is a third-party service. */
   deliveryMethod?: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY";
+  awbNumber?: string;
+  trackingStatus?: string;
+  trackingLocation?: string;
+  trackingUpdatedAt?: string;
+  trackingError?: string;
+  etaSource?: "MANUAL" | "DELHIVERY";
   /** Box counts captured in the ready-to-ship checklist before dispatch. */
   boxCounts?: number[];
   rtsCheckedAt?: string;

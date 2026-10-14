@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2860" viewBox="0 0 1600 2860" role="img" aria-labelledby="title desc">
+  <title id="title">Kurchi Projects complete showroom workflow</title>
+  <desc id="desc">A step by step workflow from Ola showroom request to franchisee handover, including accounts, dispatch and shortage replacement.</desc>
+  <rect width="1600" height="2860" fill="#111113"/>
+  <rect x="0" y="0" width="1600" height="18" fill="#ed1745"/>
+  <style>
+    .brand { font-family: Nunito, Arial, sans-serif; font-weight: 800; }
+    .title { font-family: Nunito, Arial, sans-serif; font-size: 52px; font-weight: 800; fill: #ffffff; }
+    .subtitle { font-family: Nunito, Arial, sans-serif; font-size: 22px; fill: #b7b7c0; }
+    .step { fill: #1b1b20; stroke: #33333b; stroke-width: 2; }
+    .stepTitle { font-family: Nunito, Arial, sans-serif; font-size: 26px; font-weight: 800; fill: #ffffff; }
+    .body { font-family: Nunito, Arial, sans-serif; font-size: 18px; fill: #c6c6ce; }
+    .small { font-family: Nunito, Arial, sans-serif; font-size: 16px; fill: #c6c6ce; }
+    .number { font-family: Nunito, Arial, sans-serif; font-size: 25px; font-weight: 900; fill: #ffffff; }
+    .tag { font-family: Nunito, Arial, sans-serif; font-size: 14px; font-weight: 800; fill: #ffb6c5; letter-spacing: 1px; }
+    .sideTitle { font-family: Nunito, Arial, sans-serif; font-size: 22px; font-weight: 800; fill: #ffffff; }
+    .sideBody { font-family: Nunito, Arial, sans-serif; font-size: 16px; fill: #d0d0d6; }
+  </style>
+
+  <text x="105" y="95" class="brand" font-size="42" fill="#ed1745">kurchi</text>
+  <text x="105" y="160" class="title">Complete showroom workflow</text>
+  <text x="105" y="200" class="subtitle">A simple view of how a showroom moves from Ola’s request to final handover.</text>
+  <rect x="105" y="236" width="1360" height="54" rx="27" fill="#25141a"/>
+  <text x="800" y="270" text-anchor="middle" class="brand" font-size="18" fill="#ffb6c5">OLA  →  ACCOUNTS  →  ADMIN &amp; PRODUCTION  →  LOGISTICS  →  INSTALLATION  →  FRANCHISEE</text>
+
+  <!-- main line -->
+  <line x1="170" y1="360" x2="170" y2="2230" stroke="#ed1745" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- 1 -->
+  <circle cx="170" cy="390" r="34" fill="#ed1745"/><text x="170" y="399" text-anchor="middle" class="number">1</text>
+  <rect x="245" y="330" width="1120" height="150" rx="20" class="step"/>
+  <text x="280" y="375" class="tag">OLA LOGIN</text><text x="280" y="414" class="stepTitle">Create the showroom request</text>
+  <text x="280" y="448" class="body">Add location, showroom address, GSTIN / no-GST reason, franchisee contact and opening date.</text>
+
+  <!-- 2 -->
+  <circle cx="170" cy="540" r="34" fill="#ed1745"/><text x="170" y="549" text-anchor="middle" class="number">2</text>
+  <rect x="245" y="490" width="1120" height="165" rx="20" class="step"/>
+  <text x="280" y="534" class="tag">OLA LOGIN</text><text x="280" y="573" class="stepTitle">Choose and approve the BOQ, then submit advance</text>
+  <text x="280" y="607" class="body">Standard BOQ is fixed. Modular BOQ allows quantity changes only. Ola confirms the BOQ here.</text>
+  <text x="280" y="634" class="body">Enter paid amount, UTR/reference and proof, then send the approved request to Accounts.</text>
+
+  <!-- 3 -->
+  <circle cx="170" cy="720" r="34" fill="#ed1745"/><text x="170" y="729" text-anchor="middle" class="number">3</text>
+  <rect x="245" y="665" width="1120" height="170" rx="20" class="step"/>
+  <text x="280" y="710" class="tag">ACCOUNTS</text><text x="280" y="749" class="stepTitle">Verify or reject the advance payment</text>
+  <text x="280" y="783" class="body">Accounts checks the payment reference and proof.</text>
+  <text x="280" y="810" class="body">Verified → Admin can start work. Rejected → Ola corrects the payment details and resubmits.</text>
+
+  <!-- 4 -->
+  <circle cx="170" cy="900" r="34" fill="#ed1745"/><text x="170" y="909" text-anchor="middle" class="number">4</text>
+  <rect x="245" y="845" width="1120" height="150" rx="20" class="step"/>
+  <text x="280" y="890" class="tag">ADMIN</text><text x="280" y="929" class="stepTitle">Accept the showroom and plan the work</text>
+  <text x="280" y="963" class="body">Assign franchisee and installation team, confirm site readiness, add cost centres and check the BOQ.</text>
+
+  <!-- 5 -->
+  <circle cx="170" cy="1055" r="34" fill="#ed1745"/><text x="170" y="1064" text-anchor="middle" class="number">5</text>
+  <rect x="245" y="1005" width="1120" height="150" rx="20" class="step"/>
+  <text x="280" y="1050" class="tag">ADMIN</text><text x="280" y="1089" class="stepTitle">Release the approved BOQ to production</text>
+  <text x="280" y="1123" class="body">No second BOQ approval is needed. Admin releases the already-approved items for production.</text>
+
+  <!-- 6 -->
+  <circle cx="170" cy="1215" r="34" fill="#ed1745"/><text x="170" y="1224" text-anchor="middle" class="number">6</text>
+  <rect x="245" y="1165" width="1120" height="165" rx="20" class="step"/>
+  <text x="280" y="1210" class="tag">ADMIN / PRODUCTION</text><text x="280" y="1249" class="stepTitle">Produce and pack every BOQ item</text>
+  <text x="280" y="1283" class="body">Each line item moves independently: Approved → In production → QC → Ready to pack.</text>
+  <text x="280" y="1310" class="body">This supports partial shipments when only some items are ready.</text>
+
+  <!-- 7 -->
+  <circle cx="170" cy="1395" r="34" fill="#ed1745"/><text x="170" y="1404" text-anchor="middle" class="number">7</text>
+  <rect x="245" y="1340" width="1120" height="175" rx="20" class="step"/>
+  <text x="280" y="1385" class="tag">ADMIN + ACCOUNTS</text><text x="280" y="1424" class="stepTitle">Prepare shipment and create documents</text>
+  <text x="280" y="1458" class="body">Select ready items, create crates, add packing photos, box count, transporter, vehicle and LR number.</text>
+  <text x="280" y="1485" class="body">Accounts receives a task to create the tax invoice and e-way bill before dispatch.</text>
+
+  <!-- 8 -->
+  <circle cx="170" cy="1585" r="34" fill="#ed1745"/><text x="170" y="1594" text-anchor="middle" class="number">8</text>
+  <rect x="245" y="1530" width="1120" height="165" rx="20" class="step"/>
+  <text x="280" y="1575" class="tag">LOGISTICS</text><text x="280" y="1614" class="stepTitle">Dispatch and track the consignment</text>
+  <text x="280" y="1648" class="body">Choose direct transport or delivery partner, set ETA and mark the selected crates as dispatched.</text>
+  <text x="280" y="1675" class="body">The franchisee sees each item as in transit, not just one project-level status.</text>
+
+  <!-- 9 -->
+  <circle cx="170" cy="1765" r="34" fill="#ed1745"/><text x="170" y="1774" text-anchor="middle" class="number">9</text>
+  <rect x="245" y="1710" width="1120" height="160" rx="20" class="step"/>
+  <text x="280" y="1755" class="tag">INSTALLATION TEAM</text><text x="280" y="1794" class="stepTitle">Receive only what arrives at site</text>
+  <text x="280" y="1828" class="body">The team opens the project, confirms received items and actual quantities. Their 48-hour installation timer starts.</text>
+  <text x="280" y="1855" class="body">They cannot reverse a completed receipt by mistake.</text>
+
+  <!-- 10 -->
+  <circle cx="170" cy="1940" r="34" fill="#ed1745"/><text x="170" y="1949" text-anchor="middle" class="number">10</text>
+  <rect x="245" y="1890" width="1120" height="150" rx="20" class="step"/>
+  <text x="280" y="1935" class="tag">INSTALLATION TEAM</text><text x="280" y="1974" class="stepTitle">Install each received item</text>
+  <text x="280" y="2008" class="body">Mark each item Installed once fixed. Admin is alerted if installation has not started within 48 hours.</text>
+
+  <!-- 11 -->
+  <circle cx="170" cy="2100" r="34" fill="#ed1745"/><text x="170" y="2109" text-anchor="middle" class="number">11</text>
+  <rect x="245" y="2050" width="1120" height="165" rx="20" class="step"/>
+  <text x="280" y="2095" class="tag">INSTALLATION + ADMIN</text><text x="280" y="2134" class="stepTitle">Report shortage or damage when needed</text>
+  <text x="280" y="2168" class="body">Add photo, affected item and note. Admin decides: replace, repair, waive or make a transport claim.</text>
+  <text x="280" y="2195" class="body">A replacement returns only the affected quantity to production, then follows the same shipment route.</text>
+
+  <!-- 12 -->
+  <circle cx="170" cy="2275" r="34" fill="#ed1745"/><text x="170" y="2284" text-anchor="middle" class="number">12</text>
+  <rect x="245" y="2225" width="1120" height="150" rx="20" class="step"/>
+  <text x="280" y="2270" class="tag">ADMIN + FRANCHISEE</text><text x="280" y="2309" class="stepTitle">Generate and sign the handover</text>
+  <text x="280" y="2343" class="body">When all items are installed, Admin generates the certificate. Franchisee signs using the handover code.</text>
+
+  <!-- footer panels -->
+  <text x="105" y="2475" class="title" font-size="34">What stays visible throughout</text>
+  <rect x="105" y="2520" width="420" height="190" rx="20" fill="#1b1b20" stroke="#33333b" stroke-width="2"/>
+  <text x="140" y="2570" class="sideTitle">Project control</text>
+  <text x="140" y="2605" class="sideBody">• Individual item progress</text><text x="140" y="2632" class="sideBody">• Delays and 48-hour alerts</text><text x="140" y="2659" class="sideBody">• Audit activity timeline</text>
+  <rect x="590" y="2520" width="420" height="190" rx="20" fill="#1b1b20" stroke="#33333b" stroke-width="2"/>
+  <text x="625" y="2570" class="sideTitle">Finance &amp; documents</text>
+  <text x="625" y="2605" class="sideBody">• Advance, invoice and e-way bill</text><text x="625" y="2632" class="sideBody">• Cost centres and expenses</text><text x="625" y="2659" class="sideBody">• KYC, invoices and designs</text>
+  <rect x="1075" y="2520" width="390" height="190" rx="20" fill="#1b1b20" stroke="#33333b" stroke-width="2"/>
+  <text x="1110" y="2570" class="sideTitle">Role clarity</text>
+  <text x="1110" y="2605" class="sideBody">• Ola approves BOQ at setup</text><text x="1110" y="2632" class="sideBody">• Accounts controls payment</text><text x="1110" y="2659" class="sideBody">• Franchisee signs handover</text>
+  <text x="105" y="2780" class="small" fill="#8d8d99">Live integrations to enable separately: SMS / email / WhatsApp, phone OTP, Delhivery tracking API and government e-way submission.</text>
+</svg>

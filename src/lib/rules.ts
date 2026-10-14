@@ -130,8 +130,8 @@ export function canDispatch({ project, consignment, crates }: DispatchContext): 
       (consignment.billingExempt ? !consignment.challanId : !consignment.invoiceId)
         ? { id: "DS-08", reason: consignment.billingExempt ? "Replacement shipment needs its delivery challan before dispatch." : "Create the tax invoice before dispatch." }
         : null,
-      consignment.deliveryMethod === "DIRECT_TRUCK" && !(consignment.driverName && consignment.driverPhone && consignment.driverLicenceNo)
-        ? { id: "DS-01", reason: "Direct truck needs the driver's name, mobile number and licence number." }
+      consignment.deliveryMethod === "DIRECT_TRUCK" && !(consignment.driverName && consignment.driverPhone)
+        ? { id: "DS-01", reason: "Direct truck needs the driver's name and mobile number." }
         : null,
       needsEway && !consignment.ewayBillNo
         ? {
@@ -283,7 +283,7 @@ export function taxMode(
   placeOfSupplyState: string,
   kurchiState = "Karnataka"
 ): "CGST_SGST" | "IGST" {
-  return placeOfSupplyState.trim().toLowerCase() === kurchiState.toLowerCase()
+  return placeOfSupplyState.trim().toLowerCase() === kurchiState.trim().toLowerCase()
     ? "CGST_SGST"
     : "IGST";
 }

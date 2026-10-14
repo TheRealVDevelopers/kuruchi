@@ -9,7 +9,7 @@ import { useAction, formatDate } from "@/lib/useAction";
 import { PageHeader, StatCard, EmptyState, StatStrip } from "@/components/app/Shell";
 import { RuleTag } from "@/components/app/RuleGate";
 import { ResponsiveTable, type Column } from "@/components/app/ResponsiveTable";
-import { formatCompactINR, formatINR } from "@/lib/money";
+import { formatCompactINR, formatINR, invoiceTax, roundMoney } from "@/lib/money";
 import { KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS, taxMode } from "@/lib/rules";
 import { cn } from "@/lib/utils";
 import type { Challan, Invoice, Payment } from "@/types";
@@ -457,11 +457,12 @@ function RaiseInvoiceForm({
   const [description, setDescription] = useState("Approved showroom BOQ");
   const project = projects.find((entry) => entry.id === projectId);
   const customer = repo.clientById(project?.clientId);
-  const items = project ? repo.itemsRaw(project.id) : [];
-  const taxable = Math.round((project?.totals.value ?? 0) * percent / 100);
-  const tax = Math.round(taxable * 0.18);
+  const items = project ? repo.itemsRaw(project.id).filter((item) => item.status !== "CANCELLED") : [];
+  const boqValue = roundMoney(items.reduce((sum, item) => sum + roundMoney(item.qty * item.pricing.finalPrice), 0));
+  const taxable = roundMoney(boqValue * percent / 100);
   const mode = project ? taxMode(project.site.state, repo.sellerProfile().state) : "CGST_SGST";
-  const retention = Math.round(taxable * (project?.retentionPct ?? 0) / 100);
+  const tax = invoiceTax(taxable, mode);
+  const retention = roundMoney(taxable * (project?.retentionPct ?? 0) / 100);
   const fullBoq = percent === 100;
 
   return (
@@ -493,7 +494,7 @@ function RaiseInvoiceForm({
       {project && <>
         <section className="mt-5 grid gap-3 lg:grid-cols-2"><article className="rounded-2xl border bg-muted/35 p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Bill to · Ola / customer</p><p className="mt-2 font-extrabold">{customer?.name || "Customer details missing"}</p><p className="mt-1 text-sm text-muted-foreground">GSTIN: {customer?.gstin || "Not added"}</p><p className="mt-1 text-sm text-muted-foreground">{customer?.contactName || "Contact not added"} · {customer?.contactPhone || "Mobile not added"}</p><p className="mt-1 text-sm text-muted-foreground">{customer?.contactEmail || "Email not added"}</p><p className="mt-2 text-sm leading-relaxed">{customer?.billingAddress || "Billing address not added"}</p></article><article className="rounded-2xl border bg-muted/35 p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Deliver to · showroom</p><p className="mt-2 font-extrabold">{project.name}</p><p className="mt-1 text-sm text-muted-foreground">GSTIN: {project.site.gstin || "Not added"}</p><p className="mt-1 text-sm text-muted-foreground">{project.site.contactName} · {project.site.contactPhone}</p><p className="mt-2 text-sm leading-relaxed">{project.site.address}, {project.site.city}, {project.site.state} — {project.site.pincode}</p><p className="mt-2 text-sm font-bold text-primary">Place of supply: {project.site.state} · {mode === "IGST" ? "IGST" : "CGST + SGST"}</p></article></section>
         <section className="mt-4 overflow-hidden rounded-2xl border"><div className="flex items-center justify-between gap-3 bg-muted/45 px-4 py-3"><div><p className="font-extrabold">{fullBoq ? "Approved BOQ products" : "Milestone invoice"}</p><p className="mt-0.5 text-xs text-muted-foreground">{fullBoq ? `${items.length} product line${items.length === 1 ? "" : "s"} will be printed on the invoice.` : "A milestone invoice uses the description entered above."}</p></div><b>{formatINR(taxable)}</b></div>{fullBoq && <div className="max-h-48 divide-y overflow-y-auto">{items.map((item) => <div key={item.id} className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 text-sm"><div><p className="font-bold">{item.name}</p><p className="mt-0.5 text-xs text-muted-foreground">HSN {item.hsnCode} · {item.qty} {item.unit} × {formatINR(item.pricing.finalPrice)}</p></div><b>{formatINR(item.qty * item.pricing.finalPrice)}</b></div>)}</div>}</section>
-        <section className="mt-4 grid gap-2 rounded-2xl bg-rail p-4 text-rail-foreground sm:grid-cols-4"><div><p className="text-xs text-rail-muted">Taxable amount</p><p className="mt-1 font-extrabold">{formatINR(taxable)}</p></div>{mode === "IGST" ? <div><p className="text-xs text-rail-muted">IGST 18%</p><p className="mt-1 font-extrabold">{formatINR(tax)}</p></div> : <><div><p className="text-xs text-rail-muted">CGST 9%</p><p className="mt-1 font-extrabold">{formatINR(Math.round(tax / 2))}</p></div><div><p className="text-xs text-rail-muted">SGST 9%</p><p className="mt-1 font-extrabold">{formatINR(Math.round(tax / 2))}</p></div></>}<div><p className="text-xs text-rail-muted">Invoice total</p><p className="mt-1 text-lg font-extrabold">{formatINR(taxable + tax - retention)}</p>{retention > 0 && <p className="text-xs text-rail-muted">after {formatINR(retention)} retention</p>}</div></section>
+<section className="mt-4 grid gap-2 rounded-2xl bg-rail p-4 text-rail-foreground sm:grid-cols-4"><div><p className="text-xs text-rail-muted">Taxable amount</p><p className="mt-1 font-extrabold">{formatINR(taxable)}</p></div>{mode === "IGST" ? <div><p className="text-xs text-rail-muted">IGST 18%</p><p className="mt-1 font-extrabold">{formatINR(tax.igst)}</p></div> : <><div><p className="text-xs text-rail-muted">CGST 9%</p><p className="mt-1 font-extrabold">{formatINR(tax.cgst)}</p></div><div><p className="text-xs text-rail-muted">SGST 9%</p><p className="mt-1 font-extrabold">{formatINR(tax.sgst)}</p></div></>}<div><p className="text-xs text-rail-muted">Invoice total</p><p className="mt-1 text-lg font-extrabold">{formatINR(tax.total)}</p>{retention > 0 && <p className="text-xs text-rail-muted">Retention: {formatINR(retention)} · Net payable: {formatINR(roundMoney(tax.total - retention))}</p>}</div></section>
       </>}
       <button type="submit" disabled={!project || !items.length} className="mt-5 min-h-11 rounded-xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">Issue GST invoice</button>
     </form>

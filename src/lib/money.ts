@@ -10,6 +10,19 @@
 
 import type { BoqItem, ItemPricing } from "@/types";
 
+/** Store currency in paise precision; totals must equal their printed components. */
+export function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export function invoiceTax(taxable: number, mode: "CGST_SGST" | "IGST", rate = 18) {
+  const cgst = mode === "CGST_SGST" ? roundMoney(taxable * rate / 200) : 0;
+  const sgst = cgst;
+  const igst = mode === "IGST" ? roundMoney(taxable * rate / 100) : 0;
+  const gst = roundMoney(cgst + sgst + igst);
+  return { cgst, sgst, igst, gst, total: roundMoney(taxable + gst) };
+}
+
 export interface LineMoney {
   qty: number;
   revenue: number;
@@ -100,7 +113,8 @@ export function allocatePro(total: number, weights: number[]): number[] {
 const inr = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 export function formatINR(n: number): string {

@@ -9,7 +9,7 @@ const copy = (value) => JSON.parse(JSON.stringify(value));
 const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, "../../src/data/cloudSync.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(setImmediate); };
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
-function harness() {
+function harness(shareReferences = false) {
   let local = { projects: [{ id: "pr-1", name: "Before" }], items: [], workspaceGeneration: 0 };
   let server = { payload: copy(local), revision: 1, generation: 0 };
   let authListener, snapshotListener, writes = 0, unsubscribed = 0;
@@ -33,18 +33,56 @@ function harness() {
     if (name === "@/lib/firebase") return { auth: {}, db: {} };
     throw new Error(name);
   } });
-  exports.connectSharedWorkspace(() => local, (payload) => { local = copy(payload); }, (message) => reports.push(message));
+  exports.connectSharedWorkspace(() => local, (payload) => { local = shareReferences ? payload : copy(payload); }, (message) => reports.push(message));
   return {
     api: exports, reports,
     get local() { return local; }, get server() { return server; }, get writes() { return writes; }, get unsubscribed() { return unsubscribed; },
     signIn() { authListener({ uid: "admin" }); }, signOut() { authListener(null); }, emit() { snapshotListener?.(snapshot()); },
     changeLocal(name) { local.projects[0].name = name; },
+    addShowroom() { local.projects.push({ id: "new-showroom", name: "New Ola showroom", initialPayment: { status: "PENDING_VERIFICATION" } }); local.notifications = [{ id: "account-request", role: "ACCOUNTS", title: "Payment verification needed" }]; },
     publish() { exports.publishSharedWorkspace(() => local, (message) => reports.push(message)); },
     blockGet(promise) { beforeGet = promise; }, blockReturn(promise) { beforeReturn = promise; },
     cleanup(emit = true) { server = { payload: { projects: [], items: [], workspaceGeneration: 1 }, revision: server.revision + 1, generation: 1 }; if (emit) snapshotListener?.(snapshot()); },
     remoteEdit() { server.payload.items.push({ id: "item-from-another-user" }); server.revision++; },
   };
 }
+
+test("real store reference semantics preserve a new showroom and Accounts notification", async () => {
+  const h = harness(true);
+  h.signIn(); h.emit(); h.addShowroom(); h.publish();
+  await h.api.waitForSharedWorkspaceSave();
+  assert.equal(h.server.payload.projects.length, 2);
+  assert.equal(h.server.payload.projects[1].initialPayment.status, "PENDING_VERIFICATION");
+  assert.equal(h.server.payload.notifications[0].role, "ACCOUNTS");
+});
+
+test("editing a record after a remote snapshot does not mutate the merge baseline", async () => {
+  const h = harness(true);
+  h.signIn(); h.emit(); h.remoteEdit(); h.emit();
+  h.changeLocal("Payment verified by Accounts"); h.publish();
+  await h.api.waitForSharedWorkspaceSave();
+  assert.equal(h.server.payload.projects[0].name, "Payment verified by Accounts");
+  assert.equal(h.server.payload.items[0].id, "item-from-another-user");
+});
+
+test("handoff cannot report success before the shared workspace connects", async () => {
+  const h = harness();
+  await assert.rejects(h.api.waitForSharedWorkspaceSave(), /not connected/);
+});
+
+test("handoff waits for the server acknowledgment", async () => {
+  const h = harness();
+  h.signIn(); h.emit();
+  const gate = deferred();
+  h.blockReturn(gate.promise);
+  h.changeLocal("Ola request pending Accounts"); h.publish();
+  let completed = false;
+  const handoff = h.api.waitForSharedWorkspaceSave().then(() => { completed = true; });
+  await settle();
+  assert.equal(completed, false);
+  gate.resolve(); await handoff;
+  assert.equal(h.server.payload.projects[0].name, "Ola request pending Accounts");
+});
 
 test("shared connection waits for sign-in and reconnects after sign-out", () => {
   const h = harness(); assert.equal(h.api.sharedWorkspaceStatus.connected, false);

@@ -1,0 +1,2 @@
+# Preserve generated PDF bytes; line-ending conversion can corrupt PDFs.
+*.pdf binary
