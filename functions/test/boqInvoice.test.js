@@ -100,9 +100,9 @@ test("invoice option stays visible and enables only for checked ready-to-ship it
   const React = require("../../node_modules/react");
   const { renderToStaticMarkup } = require("../../node_modules/react-dom/server");
   const statuses = pure("lib/statuses.ts"), stages = pure("lib/shippingStages.ts");
-  function render(status, role = "ADMIN", ids = ["i0"]) {
+  function render(status, role = "ADMIN", ids = ["i0"], view = "list") {
     const exports = {}; let hook = 0;
-    vm.runInNewContext(compile("components/app/BoqItemBoard.tsx"), { exports, localStorage: { getItem: () => "list" }, require: (name) => {
+    vm.runInNewContext(compile("components/app/BoqItemBoard.tsx"), { exports, localStorage: { getItem: () => view }, require: (name) => {
       if (name === "react") return { ...React, useState: (initial) => { hook++; return React.useState(hook === 2 ? ids : hook === 3 ? role === "ADMIN" : initial); } };
       if (name === "react/jsx-runtime") return require("../../node_modules/react/jsx-runtime");
       if (name === "react-router-dom") return { Link: (props) => React.createElement("a", { href: props.to }, props.children) };
@@ -125,6 +125,15 @@ test("invoice option stays visible and enables only for checked ready-to-ship it
   const unselected = render("READY_TO_PACK", "ADMIN", []);
   assert.match(invoiceButton(unselected), /\sdisabled=/);
   assert.match(unselected, /Check the ready-to-ship items/);
+  const tiles = render("READY_TO_PACK", "ADMIN", [], "tiles");
+  const readyPosition = tiles.indexOf(">Ready to ship</span>");
+  const invoicePosition = tiles.indexOf(">Invoice</span>");
+  const transitPosition = tiles.indexOf(">In transit</span>");
+  assert.ok(readyPosition >= 0 && readyPosition < invoicePosition && invoicePosition < transitPosition);
+  const cardButton = (html) => html.match(/<button\b[^>]*aria-label="Invoice Selected chair"[^>]*>/)?.[0];
+  assert.doesNotMatch(cardButton(tiles), /\sdisabled=/);
+  assert.match(cardButton(render("QC_PENDING", "ADMIN", [], "tiles")), /\sdisabled=/);
+  assert.doesNotMatch(render("READY_TO_PACK", "CLIENT", [], "tiles"), />Invoice<\/span>/);
 });
 
 test("Update item offers an invoice after Ready to ship and before transit", () => {
