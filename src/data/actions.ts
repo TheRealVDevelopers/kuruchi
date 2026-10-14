@@ -938,10 +938,13 @@ export function requestSelectedBoqInvoice(
   actor: AppUser,
   itemIds: string[],
   deliveryMethod: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY",
-  crateCode = ""
+  crateCode = "",
+  deliveryDetails?: { vehicleNo: string; driverName: string; driverPhone: string }
 ) {
   if (actor.role !== "ADMIN") throw new RuleError("Only Admin can request a BOQ invoice.");
   if (!["DIRECT_TRUCK", "THIRD_PARTY_DELIVERY"].includes(deliveryMethod)) throw new RuleError("Choose a delivery method.");
+  const transport = deliveryDetails ? { vehicleNo: deliveryDetails.vehicleNo.trim().toUpperCase(), driverName: deliveryDetails.driverName.trim(), driverPhone: deliveryDetails.driverPhone.trim() } : undefined;
+  if (transport && (!transport.vehicleNo || !transport.driverName || !/^\+?[\d\s-]{10,16}$/.test(transport.driverPhone))) throw new RuleError("Enter the truck / vehicle number, driver name and a valid driver phone number.");
   const ids = [...new Set(itemIds)];
   if (!ids.length) throw new RuleError("Select at least one ready-to-ship item.");
   const items = ids.map((id) => db.items.find((item) => item.id === id));
@@ -974,7 +977,15 @@ export function requestSelectedBoqInvoice(
   }
   for (const [shipmentId, requestedIds] of requests) {
     const shipment = db.consignments.find((entry) => entry.id === shipmentId)!;
-    if (shipment.invoiceRequestItemIds?.length && shipment.deliveryMethod === deliveryMethod) continue;
+    const transportChanged = transport && (shipment.vehicleNo !== transport.vehicleNo || shipment.driverName !== transport.driverName || shipment.driverPhone !== transport.driverPhone);
+    if (transportChanged) Object.assign(shipment, transport);
+    if (shipment.invoiceRequestItemIds?.length && shipment.deliveryMethod === deliveryMethod) {
+      if (transportChanged) {
+        audit(actor, `consignments/${shipmentId}`, "UPDATE", "Invoice delivery vehicle and driver details updated");
+        commit();
+      }
+      continue;
+    }
     requestShipmentInvoice(actor, shipmentId, requestedIds, deliveryMethod);
   }
   return [...requests.keys()];

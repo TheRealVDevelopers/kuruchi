@@ -70,6 +70,68 @@ test("repeating the same invoice request creates no duplicate batch or notificat
   assert.equal(h.writes, writes);
 });
 
+test("vehicle and driver details are saved with only the selected shipment for either delivery method", () => {
+  for (const method of ["DIRECT_TRUCK", "THIRD_PARTY_DELIVERY"]) {
+    const h = harness();
+    const others = JSON.stringify(h.db.items.slice(1));
+    const [shipmentId] = h.api.requestSelectedBoqInvoice(admin, ["i0"], method, "VEHICLE", { vehicleNo: " ka01ab1234 ", driverName: " Driver One ", driverPhone: " +919876543210 " });
+    const shipment = h.db.consignments.find((entry) => entry.id === shipmentId);
+    assert.equal(shipment.vehicleNo, "KA01AB1234");
+    assert.equal(shipment.driverName, "Driver One");
+    assert.equal(shipment.driverPhone, "+919876543210");
+    assert.equal(shipment.deliveryMethod, method);
+    assert.deepEqual(Array.from(shipment.invoiceRequestItemIds), ["i0"]);
+    assert.equal(JSON.stringify(h.db.items.slice(1)), others);
+  }
+});
+
+test("missing vehicle, driver or invalid phone is rejected before packing or requesting an invoice", () => {
+  const details = { vehicleNo: "KA01AB1234", driverName: "Driver", driverPhone: "9876543210" };
+  for (const invalid of [{ vehicleNo: " " }, { driverName: " " }, { driverPhone: "123" }, { driverPhone: "not a number" }]) {
+    const h = harness(), before = JSON.stringify(h.db);
+    assert.throws(() => h.api.requestSelectedBoqInvoice(admin, ["i0"], "DIRECT_TRUCK", "INVALID", { ...details, ...invalid }), /vehicle number, driver name and a valid driver phone/);
+    assert.equal(JSON.stringify(h.db), before);
+    assert.equal(h.writes, 0);
+  }
+});
+
+test("an existing matching invoice request saves changed transport details without sending a duplicate request", () => {
+  const h = harness();
+  const details = { vehicleNo: "KA01AB1234", driverName: "Driver", driverPhone: "9876543210" };
+  h.api.requestSelectedBoqInvoice(admin, ["i0"], "DIRECT_TRUCK", "REPEAT", details);
+  const notifications = h.db.notifications.length, writes = h.writes;
+  h.api.requestSelectedBoqInvoice(admin, ["i0"], "DIRECT_TRUCK", "", { ...details, vehicleNo: "KA02CD1234" });
+  assert.equal(h.db.consignments.length, 1);
+  assert.equal(h.db.consignments[0].vehicleNo, "KA02CD1234");
+  assert.equal(h.db.notifications.length, notifications);
+  assert.equal(h.writes, writes + 1);
+  h.api.requestSelectedBoqInvoice(admin, ["i0"], "DIRECT_TRUCK", "", { ...details, vehicleNo: "KA02CD1234" });
+  assert.equal(h.writes, writes + 1);
+});
+
+test("invoice popup shows and prefills vehicle and driver fields for truck and partner delivery", () => {
+  const React = require("../../node_modules/react");
+  const { renderToStaticMarkup } = require("../../node_modules/react-dom/server");
+  for (const method of ["DIRECT_TRUCK", "THIRD_PARTY_DELIVERY"]) {
+    const exports = {};
+    const shipment = { id: "s", deliveryMethod: method, vehicleNo: "KA01AB1234", driverName: "Driver One", driverPhone: "9876543210" };
+    vm.runInNewContext(compile("components/app/BoqInvoiceDialog.tsx"), { exports, require: (name) => {
+      if (name === "react") return React;
+      if (name === "react/jsx-runtime") return require("../../node_modules/react/jsx-runtime");
+      if (name === "@/data/repo") return { repo: { consignments: () => [shipment] } };
+      return {};
+    } });
+    const html = renderToStaticMarkup(React.createElement(exports.BoqInvoiceDialog, { items: [{ id: "i0", name: "Electrical Storage", qty: 1, unit: "nos", consignmentId: "s" }], user: admin }));
+    assert.match(html, /Truck \/ vehicle number/);
+    assert.match(html, /Driver name/);
+    assert.match(html, /Driver phone number/);
+    assert.match(html, /value="KA01AB1234"/);
+    assert.match(html, /value="Driver One"/);
+    assert.match(html, /value="9876543210"/);
+    assert.match(html, method === "DIRECT_TRUCK" ? /Truck and driver details/ : /Delivery vehicle and driver details/);
+  }
+});
+
 test("invalid, early-stage and mixed-project selections fail before any changes", () => {
   for (const prepare of [
     () => [],
