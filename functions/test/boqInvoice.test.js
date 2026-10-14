@@ -18,9 +18,9 @@ const admin = { role: "ADMIN", name: "Admin" };
 
 function harness() {
   const db = {
-    projects: [{ id: "p", name: "Showroom", clientId: "client", site: { city: "Bengaluru", address: "Site", state: "Karnataka", pincode: "560001" } }],
+    projects: [{ id: "p", name: "Showroom", clientId: "client", retentionPct: 0, site: { city: "Bengaluru", address: "Site", state: "Karnataka", pincode: "560001" } }],
     items: Array.from({ length: 16 }, (_, index) => ({ id: "i" + index, projectId: "p", name: "Item " + index, status: "READY_TO_PACK", qty: 2, qtyReadyToPack: 2, qtyDispatched: 0, hsnCode: "9403", pricing: { finalPrice: 100 } })),
-    crates: [], consignments: [], invoices: [], challans: [], notifications: [],
+    crates: [], consignments: [], invoices: [], challans: [], creditNotes: [], notifications: [],
     clients: [{ id: "client", name: "Customer", gstin: "GST", billingAddress: "Address", state: "Karnataka" }],
     sellerProfile: { legalName: "Kurchi", gstin: "GST", pan: "PAN", address: "Address", state: "Karnataka", pincode: "560001" },
   };
@@ -47,6 +47,42 @@ test("six checked ready items produce an invoice containing exactly those six", 
   assert.equal(invoice.taxableValue, 1200);
   assert.equal(JSON.stringify(h.db.items.slice(6)), unselected);
   assert.ok(h.db.items.slice(0, 6).every((item) => item.qtyInvoiced === 2));
+});
+
+test("shipment invoices cannot bill the BOQ again after a full milestone invoice", () => {
+  const h = harness(), accounts = { role: "ACCOUNTS" };
+  h.api.issueInvoice(accounts, "p", { final: false, percent: 100, description: "Full BOQ" });
+  const [shipmentId] = h.api.requestSelectedBoqInvoice(admin, ["i0"], "DIRECT_TRUCK", "DUPLICATE");
+  assert.throws(() => h.api.createShipmentBillingPack(accounts, shipmentId), /more than the approved BOQ value/);
+  assert.equal(h.db.invoices.length, 1);
+  assert.equal(h.db.items[0].qtyInvoiced, undefined);
+});
+
+test("tax-inclusive credit notes free only their taxable share for further billing", () => {
+  const h = harness(), accounts = { role: "ACCOUNTS" };
+  const first = h.api.issueInvoice(accounts, "p", { final: false, percent: 100, description: "Full BOQ" });
+  h.db.creditNotes.push({ invoiceId: first.id, amount: 118 });
+  assert.throws(() => h.api.issueInvoice(accounts, "p", { final: false, percent: 101 / 3200 * 100, description: "Too much" }), /more than the approved BOQ value/);
+  const replacement = h.api.issueInvoice(accounts, "p", { final: false, percent: 100 / 3200 * 100, description: "Correct remaining value" });
+  assert.equal(replacement.taxableValue, 100);
+  assert.equal(replacement.total, 118);
+});
+
+test("legacy packed crates retain their BOQ quantities when invoiced", () => {
+  const h = harness();
+  const shipmentId = h.api.createDispatchBatch(admin, { projectId: "p", crateCode: "LEGACY", allocations: [{ itemId: "i0", qty: 2 }] });
+  delete h.db.crates[0].itemQuantities;
+  const invoice = h.api.createShipmentBillingPack({ role: "ACCOUNTS" }, shipmentId);
+  assert.equal(invoice.lines[0].qty, 2);
+  assert.equal(invoice.taxableValue, 200);
+});
+
+test("a shipment cannot bill the same item quantity twice even if the BOQ has spare value", () => {
+  const h = harness();
+  const shipmentId = h.api.createDispatchBatch(admin, { projectId: "p", crateCode: "BILLED", allocations: [{ itemId: "i0", qty: 2 }] });
+  h.db.items[0].qtyInvoiced = 2;
+  assert.throws(() => h.api.createShipmentBillingPack({ role: "ACCOUNTS" }, shipmentId), /already been invoiced for this quantity/);
+  assert.equal(h.db.invoices.length, 0);
 });
 
 test("an existing shipment invoices only its checked items", () => {

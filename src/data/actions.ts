@@ -75,6 +75,15 @@ function creditedAmount(invoiceId: string) {
   return db.creditNotes.filter((note) => note.invoiceId === invoiceId).reduce((sum, note) => sum + note.amount, 0);
 }
 
+/** Credit notes are amounts payable; compare their taxable share against BOQ value. */
+function projectBilledTaxable(projectId: string) {
+  return roundMoney(db.invoices.filter((invoice) => invoice.projectId === projectId).reduce((sum, invoice) => {
+    const credit = Math.min(invoice.netPayable, creditedAmount(invoice.id));
+    const creditedTaxable = invoice.netPayable > 0 ? roundMoney(invoice.taxableValue * credit / invoice.netPayable) : 0;
+    return sum + Math.max(0, invoice.taxableValue - creditedTaxable);
+  }, 0));
+}
+
 /** An advance is received once, then allocated to invoices in issue order without losing the original receipt. */
 function availableVerifiedAdvance(project: Project) {
   const received = project.initialPayment?.status === "VERIFIED" ? project.initialPayment.amount : 0;
@@ -753,6 +762,26 @@ export function deleteVendor(actor: AppUser, vendorId: string) {
   if (inUse) throw new RuleError(`${vendor.name} is assigned to a live project.`);
   db.vendors = db.vendors.filter((v) => v.id !== vendorId);
   audit(actor, `vendors/${vendorId}`, "VOID", `${vendor.name} removed`);
+  commit();
+}
+
+export function saveFranchiseeOwner(actor: AppUser, owner: Vendor) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can manage franchisee owners.");
+  if (owner.type !== "FRANCHISEE" || db.vendors.some((entry) => entry.id === owner.id && entry.type !== "FRANCHISEE")) throw new RuleError("Choose a valid franchisee owner.");
+  if (!owner.contactName.trim() || !owner.contactPhone.trim() || !owner.city.trim() || !owner.state.trim()) throw new RuleError("Owner name, mobile number, city and state are required.");
+  if (owner.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(owner.email.trim())) throw new RuleError("Enter a valid owner email address.");
+  saveVendor(actor, { ...owner, name: `${owner.contactName.trim()} — Franchisee`, contactName: owner.contactName.trim(), contactPhone: owner.contactPhone.trim(), email: owner.email?.trim() || undefined, city: owner.city.trim(), state: owner.state.trim() });
+}
+
+export function deleteFranchiseeOwner(actor: AppUser, ownerId: string) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can delete franchisee owners.");
+  const owner = db.vendors.find((entry) => entry.id === ownerId && entry.type === "FRANCHISEE");
+  if (!owner) throw new RuleError("Franchisee owner not found.");
+  if (db.projects.some((project) => project.franchiseeId === ownerId)) throw new RuleError("Reassign this owner's showrooms before deleting the franchisee owner.");
+  if (db.users.some((user) => user.vendorId === ownerId)) throw new RuleError("Reassign or remove this owner's linked login account before deleting the franchisee owner.");
+  if (db.purchaseOrders.some((order) => order.vendorId === ownerId) || db.vendorBills.some((bill) => bill.vendorId === ownerId)) throw new RuleError("This owner has purchasing or billing records and cannot be deleted.");
+  db.vendors = db.vendors.filter((entry) => entry.id !== ownerId);
+  audit(actor, `vendors/${ownerId}`, "VOID", `${owner.name} removed`);
   commit();
 }
 
@@ -1498,16 +1527,19 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   const client = requireInvoiceParties(project);
   const crates = db.crates.filter((crate) => consignment.crateIds.includes(crate.id));
   const quantities = new Map<string, number>();
-  crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? 0))));
+  crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? db.items.find((item) => item.id === itemId)?.qty ?? 0))));
   const entries = [...quantities.entries()]
     .filter(([itemId]) => !consignment.invoiceRequestItemIds?.length || consignment.invoiceRequestItemIds.includes(itemId))
     .map(([itemId, qty]) => ({ item: db.items.find((item) => item.id === itemId), qty }));
   const billableEntries = entries.filter(({ item }) => !item?.replacementFor);
   if (!billableEntries.length) throw new RuleError("This replacement shipment needs only its delivery challan; the original sale has already been invoiced.");
   if (billableEntries.some(({ item, qty }) => !item || qty <= 0 || !item.hsnCode)) throw new RuleError("Every shipped line needs a quantity and HSN code.", ["FN-03"]);
+  if (billableEntries.some(({ item, qty }) => (item!.qtyInvoiced ?? 0) + qty > item!.qty)) throw new RuleError("A selected shipment line has already been invoiced for this quantity.");
   const lines = billableEntries.map(({ item, qty }) => ({ description: `${item!.orderCategory === "SERVICE" ? "Service" : "Sales"} - ${item!.name}`, hsn: item!.hsnCode, qty, rate: item!.pricing.finalPrice, taxableValue: item!.pricing.finalPrice * qty, gstRate: 18 }));
   lines.forEach((line) => { line.taxableValue = roundMoney(line.taxableValue); });
   const taxable = roundMoney(lines.reduce((sum, line) => sum + line.taxableValue, 0));
+  const boqValue = roundMoney(db.items.filter((item) => item.projectId === project.id && item.status !== "CANCELLED").reduce((sum, item) => sum + roundMoney(item.qty * item.pricing.finalPrice), 0));
+  if (roundMoney(projectBilledTaxable(project.id) + taxable) > boqValue) throw new RuleError("This would bill more than the approved BOQ value. Check existing milestone and shipment invoices.", ["FN-06"]);
   // Bill-to may differ from the showroom. Tax follows the declared place of supply.
   const mode = taxMode(project.site.state, db.sellerProfile.state);
   const tax = invoiceTax(taxable, mode);
@@ -1524,7 +1556,7 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   };
   db.invoices.unshift(invoice);
   consignment.invoiceId = invoice.id;
-  entries.forEach(({ item, qty }) => { if (item) item.qtyInvoiced = Math.min(item.qty, (item.qtyInvoiced ?? 0) + qty); });
+  billableEntries.forEach(({ item, qty }) => { if (item) item.qtyInvoiced = Math.min(item.qty, (item.qtyInvoiced ?? 0) + qty); });
   audit(actor, `invoices/${invoice.id}`, "CREATE", `${invoice.number} · partial shipment for ${project.name}`);
   notify("VENDOR", "Shipment invoice is ready", `${project.site.city}: ${invoice.number} is available in your documents.`, "/franchisee");
   commit();
@@ -1609,7 +1641,7 @@ export function issueInvoice(
 
   const boqValue = roundMoney(items.reduce((sum, item) => sum + roundMoney(item.pricing.finalPrice * item.qty), 0));
   const taxable = roundMoney((boqValue * opts.percent) / 100);
-  const previouslyBilled = db.invoices.filter((invoice) => invoice.projectId === projectId).reduce((sum, invoice) => sum + invoice.taxableValue - creditedAmount(invoice.id), 0);
+  const previouslyBilled = projectBilledTaxable(projectId);
   if (roundMoney(previouslyBilled + taxable) > boqValue) throw new RuleError("This would bill more than the approved BOQ value. Use a credit note or choose the remaining value.", ["FN-06"]);
   // The tax split must use the same place of supply printed on the invoice.
   const mode = taxMode(project.site.state, db.sellerProfile.state);

@@ -452,7 +452,8 @@ function RaiseInvoiceForm({
   projects: ReturnType<typeof repo.projects>;
   onSubmit: (v: { projectId: string; percent: number; description: string }) => void;
 }) {
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [selectedProjectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const projectId = projects.some((project) => project.id === selectedProjectId) ? selectedProjectId : projects[0]?.id ?? "";
   const [percent, setPercent] = useState(100);
   const [description, setDescription] = useState("Approved showroom BOQ");
   const project = projects.find((entry) => entry.id === projectId);
@@ -481,7 +482,7 @@ function RaiseInvoiceForm({
         </div>
         <div>
           <label htmlFor="inv-pct" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Milestone %</label>
-          <input id="inv-pct" type="number" min={1} max={100} value={percent}
+          <input id="inv-pct" type="number" min={0.01} max={100} step="any" value={percent}
             onChange={(e) => setPercent(Number(e.target.value))}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm tabular-nums" />
         </div>
@@ -496,7 +497,7 @@ function RaiseInvoiceForm({
         <section className="mt-4 overflow-hidden rounded-2xl border"><div className="flex items-center justify-between gap-3 bg-muted/45 px-4 py-3"><div><p className="font-extrabold">{fullBoq ? "Approved BOQ products" : "Milestone invoice"}</p><p className="mt-0.5 text-xs text-muted-foreground">{fullBoq ? `${items.length} product line${items.length === 1 ? "" : "s"} will be printed on the invoice.` : "A milestone invoice uses the description entered above."}</p></div><b>{formatINR(taxable)}</b></div>{fullBoq && <div className="max-h-48 divide-y overflow-y-auto">{items.map((item) => <div key={item.id} className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 text-sm"><div><p className="font-bold">{item.name}</p><p className="mt-0.5 text-xs text-muted-foreground">HSN {item.hsnCode} · {item.qty} {item.unit} × {formatINR(item.pricing.finalPrice)}</p></div><b>{formatINR(item.qty * item.pricing.finalPrice)}</b></div>)}</div>}</section>
 <section className="mt-4 grid gap-2 rounded-2xl bg-rail p-4 text-rail-foreground sm:grid-cols-4"><div><p className="text-xs text-rail-muted">Taxable amount</p><p className="mt-1 font-extrabold">{formatINR(taxable)}</p></div>{mode === "IGST" ? <div><p className="text-xs text-rail-muted">IGST 18%</p><p className="mt-1 font-extrabold">{formatINR(tax.igst)}</p></div> : <><div><p className="text-xs text-rail-muted">CGST 9%</p><p className="mt-1 font-extrabold">{formatINR(tax.cgst)}</p></div><div><p className="text-xs text-rail-muted">SGST 9%</p><p className="mt-1 font-extrabold">{formatINR(tax.sgst)}</p></div></>}<div><p className="text-xs text-rail-muted">Invoice total</p><p className="mt-1 text-lg font-extrabold">{formatINR(tax.total)}</p>{retention > 0 && <p className="text-xs text-rail-muted">Retention: {formatINR(retention)} · Net payable: {formatINR(roundMoney(tax.total - retention))}</p>}</div></section>
       </>}
-      <button type="submit" disabled={!project || !items.length} className="mt-5 min-h-11 rounded-xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">Issue GST invoice</button>
+      <button type="submit" disabled={!project || !items.length || !Number.isFinite(percent) || percent <= 0 || percent > 100} className="mt-5 min-h-11 rounded-xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">Issue GST invoice</button>
     </form>
   );
 }
