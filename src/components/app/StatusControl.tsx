@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { repo } from "@/data/repo";
 import { TransitDialog } from "./TransitDialog";
+import { BoqInvoiceDialog } from "./BoqInvoiceDialog";
 import { productionNext as simpleNext } from "@/lib/shippingStages";
 
 
@@ -33,8 +34,10 @@ export function StatusControl({
   const run = useAction();
   const [open, setOpen] = useState(false);
   const [transit, setTransit] = useState(false);
+  const [invoice, setInvoice] = useState(false);
   const next = user.role === "ADMIN" ? simpleNext(item.status) : ITEM_TRANSITIONS[item.status];
   const canStartTransit = user.role === "ADMIN" && ["READY_TO_PACK", "PACKED", "DISPATCHED"].includes(item.status);
+  const canInvoice = user.role === "ADMIN" && ["READY_TO_PACK", "PACKED"].includes(item.status);
   const shipment = repo.consignments(item.projectId).find((entry) => entry.id === item.consignmentId);
 
   if (disabled || (!canStartTransit && next.length === 0)) {
@@ -49,12 +52,14 @@ export function StatusControl({
       <section className="w-full max-w-md rounded-[2rem] bg-card p-5 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Update one BOQ item</p><h2 className="mt-1 text-xl font-extrabold">{item.name}</h2><p className="mt-1 text-sm text-muted-foreground">{item.qty} {item.unit} · {item.zone || "Showroom"}</p></div><button type="button" onClick={() => setOpen(false)} className="grid h-10 w-10 place-items-center rounded-xl border" aria-label="Close update"><X className="h-4 w-4" /></button></div>
         <div className="mt-5 rounded-2xl bg-muted/65 p-4"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Current status</p><div className="mt-2"><ItemStatusBadge status={item.status} /></div></div>
-        <p className="mt-5 text-sm font-bold">What happened next?</p><p className="mt-1 text-sm text-muted-foreground">In production → In packaging → Ready to ship → In transit.</p>
+        <p className="mt-5 text-sm font-bold">What happened next?</p><p className="mt-1 text-sm text-muted-foreground">In production → In packaging → Ready to ship → Invoice → In transit.</p>
+        {canInvoice && <button type="button" onClick={() => { setOpen(false); setInvoice(true); }} className="mt-3 min-h-12 w-full rounded-xl border px-4 text-left font-bold">Invoice this item</button>}
         {canStartTransit && (shipment ? <button type="button" onClick={() => { setOpen(false); setTransit(true); }} className="mt-3 min-h-12 w-full rounded-xl bg-primary font-bold text-primary-foreground">In transit · add delivery details</button> : <Link to={`/admin/dispatch?project=${item.projectId}`} className="mt-3 block rounded-xl border p-4 text-sm font-bold">Prepare shipment to start In transit →</Link>)}
         <div className="mt-3 space-y-2">{next.map((to) => <button key={to} type="button" onClick={() => { if (to === "READY_TO_PACK" && !window.confirm("Confirm quality checks are complete and this item is ready for shipment packing.")) return; const saved = run(() => act.setItemStatus(user, item.id, to), `${item.name} → ${ITEM_STATUS_META[to].label}`); if (saved) setOpen(false); }} className="flex min-h-14 w-full items-center justify-between rounded-2xl border bg-background px-4 text-left transition hover:border-primary hover:bg-primary/5"><span><span className="block font-extrabold">{ITEM_STATUS_META[to].label}</span><span className="mt-0.5 block text-xs text-muted-foreground">Set this item as {ITEM_STATUS_META[to].label.toLowerCase()}.</span></span><span className="grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground"><Check className="h-4 w-4" /></span></button>)}</div>
       </section>
     </div>}
     {transit && shipment && <TransitDialog shipment={shipment} user={user} onClose={() => setTransit(false)}/>}
+    {invoice && <BoqInvoiceDialog items={[item]} user={user} onClose={() => setInvoice(false)} onSaved={() => setInvoice(false)}/>}
   </>;
 }
 

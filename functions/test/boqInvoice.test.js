@@ -96,7 +96,7 @@ test("non-admins cannot request an invoice and existing requests cannot be repla
   assert.equal(JSON.stringify(h.db), before);
 });
 
-test("invoice option appears only after all checked items are ready to ship", () => {
+test("invoice option stays visible and enables only for checked ready-to-ship items", () => {
   const React = require("../../node_modules/react");
   const { renderToStaticMarkup } = require("../../node_modules/react-dom/server");
   const statuses = pure("lib/statuses.ts"), stages = pure("lib/shippingStages.ts");
@@ -116,10 +116,42 @@ test("invoice option appears only after all checked items are ready to ship", ()
     } });
     return renderToStaticMarkup(React.createElement(exports.BoqItemBoard, { items: [{ id: "i0", projectId: "p", name: "Selected chair", qty: 2, status }], user: { role }, editable: true }));
   }
-  assert.match(render("READY_TO_PACK"), /Invoice selected items/);
-  assert.match(render("PACKED"), /Invoice selected items/);
-  assert.doesNotMatch(render("QC_PENDING"), /Invoice selected items/);
-  assert.doesNotMatch(render("IN_TRANSIT"), /Invoice selected items/);
+  const invoiceButton = (html) => html.match(/<button\b[^>]*>Invoice selected items<\/button>/)?.[0];
+  assert.doesNotMatch(invoiceButton(render("READY_TO_PACK")), /\sdisabled=/);
+  assert.doesNotMatch(invoiceButton(render("PACKED")), /\sdisabled=/);
+  assert.match(invoiceButton(render("QC_PENDING")), /\sdisabled=/);
+  assert.match(invoiceButton(render("IN_TRANSIT")), /\sdisabled=/);
   assert.doesNotMatch(render("READY_TO_PACK", "CLIENT"), /Invoice selected items/);
-  assert.doesNotMatch(render("READY_TO_PACK", "ADMIN", []), /Invoice selected items/);
+  const unselected = render("READY_TO_PACK", "ADMIN", []);
+  assert.match(invoiceButton(unselected), /\sdisabled=/);
+  assert.match(unselected, /Check the ready-to-ship items/);
+});
+
+test("Update item offers an invoice after Ready to ship and before transit", () => {
+  const React = require("../../node_modules/react");
+  const { renderToStaticMarkup } = require("../../node_modules/react-dom/server");
+  const statuses = pure("lib/statuses.ts"), stages = pure("lib/shippingStages.ts");
+  function render(status, role = "ADMIN") {
+    const exports = {}; let hook = 0;
+    vm.runInNewContext(compile("components/app/StatusControl.tsx"), { exports, require: (name) => {
+      if (name === "react") return { ...React, useState: (initial) => { hook++; return React.useState(hook === 1 ? true : initial); } };
+      if (name === "react/jsx-runtime") return require("../../node_modules/react/jsx-runtime");
+      if (name === "react-router-dom") return { Link: (props) => React.createElement("a", { href: props.to }, props.children) };
+      if (name === "lucide-react") return { Check: () => null, ChevronRight: () => null, X: () => null };
+      if (name === "@/lib/statuses") return statuses;
+      if (name === "@/lib/shippingStages") return stages;
+      if (name === "./StatusBadge") return { ItemStatusBadge: () => null };
+      if (name === "@/lib/useAction") return { useAction: () => () => true };
+      if (name === "@/lib/utils") return { cn: (...values) => values.filter(Boolean).join(" ") };
+      if (name === "@/data/repo") return { repo: { consignments: () => [] } };
+      return {};
+    } });
+    return renderToStaticMarkup(React.createElement(exports.StatusControl, { item: { id: "i0", projectId: "p", name: "Storage", qty: 1, unit: "nos", status }, user: { role } }));
+  }
+  const ready = render("READY_TO_PACK");
+  assert.match(ready, /Invoice this item/);
+  assert.ok(ready.indexOf("Invoice this item") < ready.indexOf("Prepare shipment to start In transit"));
+  assert.match(render("PACKED"), /Invoice this item/);
+  assert.doesNotMatch(render("QC_PENDING"), /Invoice this item/);
+  assert.doesNotMatch(render("READY_TO_PACK", "CLIENT"), /Invoice this item/);
 });
