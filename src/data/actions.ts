@@ -901,6 +901,7 @@ export function createDispatchBatch(
   notify("ACCOUNTS", "Shipment ready for billing", `${project.site.city}: ${input.crateCode.trim().toUpperCase()} is packed. Create the GST invoice and e-way paperwork for this shipment.`, "/accounts");
   recomputeProject(input.projectId);
   commit();
+  return consignmentId;
 }
 
 export function addCratePhoto(actor: AppUser, crateId: string, photo?: string) {
@@ -930,6 +931,53 @@ export function requestShipmentInvoice(actor: AppUser, consignmentId: string, it
   notify("ACCOUNTS", "Invoice requested by Admin", `${project.site.city}: create a GST invoice for ${selected.length} selected product line${selected.length === 1 ? "" : "s"} · ${deliveryLabel}.`, "/accounts");
   audit(actor, `consignments/${consignmentId}`, "UPDATE", `Invoice requested for ${selected.length} shipment lines · ${deliveryLabel}`);
   commit();
+}
+
+/** Request Accounts billing for only the checked, ready-to-ship BOQ lines. */
+export function requestSelectedBoqInvoice(
+  actor: AppUser,
+  itemIds: string[],
+  deliveryMethod: "DIRECT_TRUCK" | "THIRD_PARTY_DELIVERY",
+  crateCode = ""
+) {
+  if (actor.role !== "ADMIN") throw new RuleError("Only Admin can request a BOQ invoice.");
+  if (!["DIRECT_TRUCK", "THIRD_PARTY_DELIVERY"].includes(deliveryMethod)) throw new RuleError("Choose a delivery method.");
+  const ids = [...new Set(itemIds)];
+  if (!ids.length) throw new RuleError("Select at least one ready-to-ship item.");
+  const items = ids.map((id) => db.items.find((item) => item.id === id));
+  if (items.some((item) => !item)) throw new RuleError("A selected BOQ item is no longer available.");
+  const selected = items as BoqItem[];
+  const projectId = selected[0].projectId;
+  requireProject(projectId);
+  if (selected.some((item) => item.projectId !== projectId)) throw new RuleError("Select items from one BOQ only.");
+  if (selected.some((item) => !["READY_TO_PACK", "PACKED"].includes(item.status))) throw new RuleError("All selected items must be Ready to ship before requesting an invoice.");
+  if (selected.some((item) => item.replacementFor || (item.qtyInvoiced ?? 0) > 0)) throw new RuleError("Select new sale items that have not already been invoiced.");
+  const requests = new Map<string, string[]>();
+  const unpacked = selected.filter((item) => !item.consignmentId);
+  for (const item of selected) {
+    if (!item.consignmentId) {
+      if (item.status !== "READY_TO_PACK" || item.qtyDispatched > 0 || !Number.isFinite(item.qty) || item.qty <= 0 || (item.qtyReadyToPack ?? item.qty) !== item.qty) throw new RuleError("Each selected item must be ready to pack in full.");
+      continue;
+    }
+    const shipment = db.consignments.find((entry) => entry.id === item.consignmentId && entry.projectId === projectId);
+    if (!shipment || shipment.status !== "READY" || shipment.invoiceId || shipment.billingExempt) throw new RuleError("A selected shipment is no longer waiting for an invoice.");
+    if (!db.crates.some((crate) => shipment.crateIds.includes(crate.id) && crate.itemIds.includes(item.id))) throw new RuleError("A selected item is missing from its shipment.");
+    requests.set(shipment.id, [...(requests.get(shipment.id) ?? []), item.id]);
+  }
+  for (const [shipmentId, requestedIds] of requests) {
+    const existing = db.consignments.find((entry) => entry.id === shipmentId)!.invoiceRequestItemIds;
+    if (existing?.length && (existing.length !== requestedIds.length || existing.some((id) => !requestedIds.includes(id)))) throw new RuleError("A selected shipment already has a different invoice request. Complete that request in Accounts first.");
+  }
+  if (unpacked.length) {
+    const shipmentId = createDispatchBatch(actor, { projectId, crateCode, allocations: unpacked.map((item) => ({ itemId: item.id, qty: item.qty })) });
+    requests.set(shipmentId, unpacked.map((item) => item.id));
+  }
+  for (const [shipmentId, requestedIds] of requests) {
+    const shipment = db.consignments.find((entry) => entry.id === shipmentId)!;
+    if (shipment.invoiceRequestItemIds?.length && shipment.deliveryMethod === deliveryMethod) continue;
+    requestShipmentInvoice(actor, shipmentId, requestedIds, deliveryMethod);
+  }
+  return [...requests.keys()];
 }
 
 export function updateConsignment(
