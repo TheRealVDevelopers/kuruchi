@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import { ThemeProvider } from "@/features/theme/ThemeContext";
+import { SellerProfilePromptProvider } from "@/components/app/SellerProfilePromptProvider";
 import AppRouter from "./pages/AppRouter";
 
 const queryClient = new QueryClient();
@@ -17,7 +18,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppRouter />
+          <SellerProfilePromptProvider>
+            <AppRouter />
+          </SellerProfilePromptProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

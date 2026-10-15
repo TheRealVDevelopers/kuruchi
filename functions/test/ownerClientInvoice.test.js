@@ -73,7 +73,7 @@ test("client portal displays the signed-in client's name, phone and email only",
 test("printed tax invoices show actual challan numbers, advances, receipts, credits and balance", () => {
   let html = "";
   const invoice = { id: "inv", projectId: "p", number: "KP/INV/1", issuedAt: "2026-10-15", dueDate: "2026-11-15", taxMode: "CGST_SGST", cgst: 9, sgst: 9, igst: 0, taxableValue: 100, total: 118, netPayable: 118, retentionAmount: 0, advanceApplied: 20, amountReceived: 30, challanIds: ["internal-dc-id"], lines: [{ description: "<script>bad</script>", hsn: "9403", qty: 1, rate: 100, taxableValue: 100 }] };
-  const api = load("lib/printInvoice.ts", { "@/lib/money": money, "@/data/repo": { repo: { sellerProfile: () => ({ legalName: "Kurchi", gstin: "GST" }), challans: () => [{ id: "internal-dc-id", number: "KP/DC/2026/1" }], creditNotes: () => [{ amount: 8 }] } } }, { window: { open: () => ({ document: { write: (value) => { html = value; }, close: () => {} } }) } });
+  const api = load("lib/printInvoice.ts", { "@/data/actions": { requireSellerProfile: () => ({ legalName: "Kurchi", gstin: "GST" }) }, "@/lib/money": money, "@/data/repo": { repo: { challans: () => [{ id: "internal-dc-id", number: "KP/DC/2026/1" }], creditNotes: () => [{ amount: 8 }] } } }, { window: { open: () => ({ document: { write: (value) => { html = value; }, close: () => {} } }) } });
   assert.equal(api.printTaxInvoice(invoice, undefined, { name: "Correct customer", contactPhone: "9876543210", contactEmail: "customer@example.com" }), true);
   assert.match(html, /KP\/DC\/2026\/1/); assert.doesNotMatch(html, /internal-dc-id/);
   assert.match(html, /Advance applied<\/td><td[^>]*>−₹20\.00/);

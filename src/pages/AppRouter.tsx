@@ -129,6 +129,7 @@ export default function AppRouter() {
         <Route path="challans" element={<ChallansPage />} />
         <Route path="eway" element={<EwayPage />} />
         <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="business-profile" element={<BusinessProfilePage />} />
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="retention" element={<RetentionPage />} />
         <Route path="controls" element={<AccountsControlsPage />} />

@@ -6,12 +6,14 @@ import { useDb } from "@/data/store";
 import { formatCompactINR, formatINR } from "@/lib/money";
 import { KURCHI_EWAY_REQUIRED_FOR_ALL_SHIPMENTS } from "@/lib/rules";
 import { printTaxInvoice } from "@/lib/printInvoice";
+import { useAction } from "@/lib/useAction";
 import { PaymentApprovalTasks } from "../components/PaymentApprovalTasks";
 import { ShipmentInvoiceTasks } from "../components/ShipmentInvoiceTasks";
 import { AccountsFranchiseeOwners } from "../components/AccountsFranchiseeOwners";
 
 export default function AccountsHomePage() {
   useDb(); const { user } = useAuth(); const { hash } = useLocation();
+  const run = useAction();
   if (!user) return null;
   if (hash.startsWith("#shipment-")) return <Navigate replace to={hash === "#shipment-invoices" ? "/accounts/invoices?requests=1" : `/accounts/invoices?shipment=${hash.slice("#shipment-".length)}`} />;
   const projects = repo.projects(user); const invoices = repo.invoices(); const notifications = repo.notifications(user).slice(0, 6);
@@ -29,7 +31,7 @@ export default function AccountsHomePage() {
 <Panel step="Step 1" title="Approve payments" hint="After approval, the showroom moves to Kurchi Admin."><PaymentApprovalTasks/></Panel>
     <Panel step="Step 2" title="Create shipment invoices" hint="Each request shows the exact products and delivery method Admin selected."><ShipmentInvoiceTasks/></Panel>
     <section className="grid gap-5 lg:grid-cols-2"><Panel step="Step 3" title="Complete e-way bills" hint="Required for applicable shipments.">{eways.length ? <Link to="/accounts/eway" className="block rounded-2xl bg-primary/10 p-4 font-extrabold text-primary">Open {eways.length} e-way bill task{eways.length === 1 ? "" : "s"}</Link> : <a href="/accounts/eway" className="block rounded-2xl bg-muted/55 p-4 text-sm font-bold">Open e-way bill workspace</a>}</Panel><Panel step="Step 4" title="Collections and costs" hint="Keep showroom money current."><div className="grid grid-cols-2 gap-2"><Quick to="/accounts/payments" icon={<CircleDollarSign/>} text="Record payment"/><Quick to="/accounts/cost-centres" icon={<WalletCards/>} text="Add project expense"/></div></Panel></section>
-    <Panel step="Recent" title="Invoices already raised" hint="Print any existing invoice or open the register.">{invoices.length ? <div className="divide-y">{invoices.slice(0, 4).map((i) => <div key={i.id} className="flex items-center justify-between gap-3 py-3"><div><b className="font-mono text-sm">{i.number}</b><p className="text-xs text-muted-foreground">{formatINR(i.netPayable)} · {i.status.replaceAll("_", " ").toLowerCase()}</p></div><button onClick={() => printTaxInvoice(i, projects.find((p) => p.id === i.projectId), repo.clientById(i.clientId))} className="rounded-lg border px-3 py-2 text-xs font-bold">Print</button></div>)}</div> : <Empty icon={<FileText/>} title="No invoices raised yet" hint="Invoices created above appear here."/>}</Panel>
+    <Panel step="Recent" title="Invoices already raised" hint="Print any existing invoice or open the register.">{invoices.length ? <div className="divide-y">{invoices.slice(0, 4).map((i) => <div key={i.id} className="flex items-center justify-between gap-3 py-3"><div><b className="font-mono text-sm">{i.number}</b><p className="text-xs text-muted-foreground">{formatINR(i.netPayable)} · {i.status.replaceAll("_", " ").toLowerCase()}</p></div><button onClick={() => run(() => { printTaxInvoice(i, projects.find((p) => p.id === i.projectId), repo.clientById(i.clientId)); })} className="rounded-lg border px-3 py-2 text-xs font-bold">Print</button></div>)}</div> : <Empty icon={<FileText/>} title="No invoices raised yet" hint="Invoices created above appear here."/>}</Panel>
   </div>;
 }
 function Metric({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: string | number; note: string }) { return <article className="rounded-3xl border bg-card p-4"><span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/10 text-primary">{icon}</span><p className="mt-4 text-2xl font-extrabold">{value}</p><p className="mt-1 text-sm font-bold">{label}</p><p className="mt-1 text-xs text-muted-foreground">{note}</p></article>; }

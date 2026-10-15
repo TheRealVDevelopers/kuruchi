@@ -1,15 +1,16 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { RuleError } from "@/data/actions";
+import { RuleError, SellerProfileRequiredError } from "@/data/actions";
+import { useSellerProfilePrompt } from "@/lib/sellerProfilePrompt";
 
 /**
  * Runs a store action and reports the outcome.
  *
- * A RuleError is not a crash — it is the system declining, and the reason is
- * worth showing verbatim along with the rule id, so people learn the rule
- * instead of hunting for a workaround.
+ * Missing seller details open the setup prompt. Other business-rule failures
+ * show their reason and rule ID in a toast.
  */
 export function useAction() {
+  const promptSellerProfile = useSellerProfilePrompt();
   return useCallback(
     (fn: () => void, successMessage?: string, successDetail?: string) => {
       try {
@@ -17,7 +18,9 @@ export function useAction() {
         if (successMessage) toast.success(successMessage, { description: successDetail });
         return true;
       } catch (err) {
-        if (err instanceof RuleError) {
+        if (err instanceof SellerProfileRequiredError) {
+          promptSellerProfile();
+        } else if (err instanceof RuleError) {
           toast.error("Blocked", {
             description: err.rules.length ? `${err.rules.join(", ")} — ${err.message}` : err.message,
           });
@@ -29,7 +32,7 @@ export function useAction() {
         return false;
       }
     },
-    []
+    [promptSellerProfile]
   );
 }
 
