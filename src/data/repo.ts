@@ -10,7 +10,8 @@
 import { db, NOW } from "./store";
 import type { AppUser, BoqItem, Project, Role } from "@/types";
 import { isStale } from "@/lib/statuses";
-import { accountsInboxLink } from "@/lib/accountsInbox";
+import { accountsInboxEntry, type AccountsInboxEntry } from "@/lib/accountsInbox";
+import { franchiseeInvoiceParties } from "@/lib/invoiceParties";
 
 export { NOW };
 
@@ -60,6 +61,7 @@ export function redactItems(items: BoqItem[], role: Role): SafeItem[] {
 
 export const repo = {
   sellerProfile: () => db.sellerProfile,
+  invoiceParties: (project?: Project) => franchiseeInvoiceParties(project, db.vendors?.find((owner) => owner.id === project?.franchiseeId)),
   users: () => db.users,
   userByEmail: (email: string) =>
     db.users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase()) ?? null,
@@ -119,9 +121,9 @@ export const repo = {
       attachments: db.documents.filter((entry) => entry.projectId === project.id && ["INVOICE", "CHALLAN", "EWAY_BILL", "LR", "OTHER"].includes(entry.type)),
     }));
   },
-  notifications: (user: AppUser | null) =>
+  notifications: (user: AppUser | null): AccountsInboxEntry[] =>
     user ? db.notifications.filter((n) => n.role === "ALL" || n.role === user.role).map((n) =>
-      user.role === "ACCOUNTS" ? { ...n, link: accountsInboxLink(n, db.projects, db.consignments, db.crates) } : n) : [],
+      user.role === "ACCOUNTS" ? accountsInboxEntry(n, db.projects, db.consignments, db.crates) : n) : [],
 
   crates: (projectId?: string) =>
     projectId ? db.crates.filter((c) => c.projectId === projectId) : db.crates,

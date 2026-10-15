@@ -237,8 +237,8 @@ Project → COMPLETED. DLP clock starts. Final invoice unblocked.
 Goods leave the factory, sale has not happened yet
   ▼
 DELIVERY CHALLAN (GST Rule 55)         ← not an invoice, no tax charged yet
-  ├─ Bill-to: Ola HQ (GSTIN A, registered address)
-  ├─ Ship-to: showroom site (GSTIN B or unregistered site address)
+  ├─ Bill-to: franchisee showroom (its GSTIN and address)
+  ├─ Ship-to: the same franchisee showroom (its GSTIN or unregistered site address)
   ├─ HSN per line, quantity, taxable value "for transportation purposes"
   └─ DC number series: KP/DC/25-26/0001
   ▼
@@ -251,7 +251,7 @@ Goods received, installed, handed over
   ▼
 TAX INVOICE
   ├─ Milestone-based (advance / on dispatch / on completion) or single final invoice
-  ├─ Bill-to Ola HQ; place of supply drives CGST+SGST vs IGST
+  ├─ Bill-to and ship-to the franchisee; place of supply drives CGST+SGST vs IGST
   ├─ IF place of supply state == Kurchi's state → CGST + SGST
   ├─ ELSE                                        → IGST
   ├─ References the DC number(s) it covers
@@ -382,7 +382,7 @@ Each rule has an ID so it can be referenced in code and in tests.
 | FN-04 | Final invoice is blocked until the handover certificate is signed (HO-02). |
 | FN-05 | IF `retention_pct > 0` THEN invoice shows retention as a deduction and schedules a release reminder at `dlp_end_date`. |
 | FN-06 | Invoice and DC numbers are gapless, per financial year, allocated server-side only. |
-| FN-07 | An issued invoice can never be edited — only credit-noted. |
+| FN-07 | Accounts may correct an invoice number with an audit trail. Financial values are corrected using credit notes. |
 | FN-08 | IF payment received < invoice total THEN mark PART_PAID and age the balance (0–30 / 31–60 / 61–90 / 90+). |
 | FN-09 | IF a vendor bill exceeds its PO value by more than 5% THEN hold for Admin approval. |
 | FN-10 | Project P&L = Σ `final_price` − Σ `landed_cost` − overhead allocation. Shown alongside Σ `quoted_margin` so the erosion is visible. |

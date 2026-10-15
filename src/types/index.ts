@@ -522,11 +522,29 @@ export interface InvoiceLine {
   gstRate: number;
 }
 
+export interface InvoiceParty {
+  name: string;
+  gstin: string;
+  address: string;
+  state: string;
+  contactName?: string;
+  contactPhone?: string;
+  email?: string;
+  noGstinReason?: string;
+}
+
 export interface Invoice {
   id: string;
   number: string;
+  /** Previous display numbers stay reserved when Accounts corrects a number. */
+  previousNumbers?: string[];
+  numberUpdatedAt?: string;
+  numberUpdatedBy?: string;
   projectId: string;
   clientId: string;
+  /** Recipient snapshots; older invoices resolve their franchisee from the project. */
+  billTo?: InvoiceParty;
+  shipTo?: InvoiceParty;
   placeOfSupplyState: string;
   lines: InvoiceLine[];
   taxMode: "CGST_SGST" | "IGST";

@@ -188,7 +188,7 @@ export function nextId(prefix: string): string {
 export function nextDocNumber(kind: "DC" | "INV"): string {
   const existing = kind === "DC"
     ? db.challans.map((c) => c.number)
-    : db.invoices.map((i) => i.number);
+    : db.invoices.flatMap((i) => [i.number, ...(i.previousNumbers ?? [])]);
 
   const highest = existing
     .map((n) => Number(n.split("/").pop()))

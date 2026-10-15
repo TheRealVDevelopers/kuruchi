@@ -1,5 +1,45 @@
 import type { AppNotification, Consignment, Crate, Project } from "@/types";
 
+export interface AccountsInboxEntry extends AppNotification {
+  requestCategory?: "PAYMENT" | "INVOICE";
+  requestStatus?: "WAITING" | "ON_HOLD" | "COMPLETED" | "RETURNED" | "ARCHIVED";
+}
+
+/** Project current work over historical alerts without changing the audit trail. */
+export function accountsInboxEntry(notification: AppNotification, projects: Project[] = [], shipments: Consignment[] = [], crates: Crate[] = []): AccountsInboxEntry {
+  const link = accountsInboxLink(notification, projects, shipments, crates);
+  const entry: AccountsInboxEntry = { ...notification, link };
+  if (/payment|receipt|collection|advance/i.test(notification.title) || link?.startsWith("/accounts/payments")) entry.requestCategory = "PAYMENT";
+  else if (/invoice|billing|challan|e-way|eway/i.test(notification.title) || link?.startsWith("/accounts/invoices")) entry.requestCategory = "INVOICE";
+
+  if (["Payment verification needed", "Corrected payment needs verification"].includes(notification.title)) {
+    const id = new URLSearchParams(link?.split("?")[1] ?? "").get("verify");
+    const project = projects.find((project) => project.id === id);
+    const payment = project?.initialPayment;
+    if (!project || !payment) {
+      const matching = projects.filter((candidate) => notification.detail.startsWith(`${candidate.name} ·`));
+      if (id || matching.length === 0) return { ...entry, title: "Previous payment request", detail: "This showroom payment request is no longer available. Open the verification queue to review current requests.", requestStatus: "ARCHIVED" };
+      return entry;
+    }
+    if (payment.status === "VERIFIED") return { ...entry, title: "Payment verified", detail: `${project.name} · Payment approved by Accounts. No verification is pending.`, requestStatus: "COMPLETED" };
+    if (payment.status === "REJECTED") return { ...entry, title: "Payment returned to Ola", detail: `${project.name} · ${payment.rejectionReason || "Waiting for corrected payment details from Ola."}`, requestStatus: "RETURNED" };
+    if (payment.status === "ON_HOLD") return { ...entry, title: "Payment on hold", detail: `${project.name} · ${payment.holdReason || "Review the payment before approving."}`, requestStatus: "ON_HOLD" };
+    return { ...entry, requestStatus: "WAITING" };
+  }
+  if (entry.requestCategory === "INVOICE") {
+    const id = new URLSearchParams(link?.split("?")[1] ?? "").get("shipment");
+    const shipment = shipments.find((shipment) => shipment.id === id);
+    if (shipment?.invoiceId || (shipment?.billingExempt && shipment.challanId)) {
+      const project = projects.find((project) => project.id === shipment.projectId);
+      return { ...entry, title: shipment.invoiceId ? "Shipment invoice created" : "Replacement documents created", detail: `${project?.name || "Showroom"} · The requested billing documents are ready to view.`, requestStatus: "COMPLETED" };
+    }
+    if (shipment) return { ...entry, requestStatus: "WAITING" };
+    const matching = projects.filter((project) => notification.detail.startsWith(`${project.name} ·`) || notification.detail.startsWith(`${project.site.city}:`));
+    if (id || matching.length === 0) return { ...entry, title: "Previous invoice request", detail: "This previous request no longer identifies an active shipment. Open the invoice queue to review current billing work.", requestStatus: "ARCHIVED" };
+  }
+  return entry;
+}
+
 /** Resolve older inbox entries without changing their saved records. */
 export function accountsInboxLink(notification: AppNotification, projects: Project[] = [], shipments: Consignment[] = [], crates: Crate[] = []): string | undefined {
   const link = notification.link;

@@ -18,6 +18,7 @@ import {
 } from "@/lib/rules";
 import { canTransition } from "@/lib/statuses";
 import { invoiceTax, roundMoney } from "@/lib/money";
+import { franchiseeInvoiceParties } from "@/lib/invoiceParties";
 
 export class RuleError extends Error {
   constructor(message: string, public rules: string[] = []) {
@@ -67,14 +68,10 @@ function requireFranchisee(actor: AppUser, project: Project) {
 
 function requireInvoiceParties(project: Project) {
   requireSellerProfile();
-  const client = db.clients.find((entry) => entry.id === project.clientId);
-  if (!client?.name || !client.gstin || !client.billingAddress || !client.state) {
-    throw new RuleError("Complete the customer name, GSTIN, billing address and state before issuing a tax document.", ["FN-01"]);
+  if (!project.name.trim() || !project.site.address.trim() || !project.site.state.trim() || !project.site.pincode.trim()) {
+    throw new RuleError("Complete the franchisee showroom name, address, state and PIN code before issuing a tax document.", ["FN-01"]);
   }
-  if (!project.site.address || !project.site.state || !project.site.pincode) {
-    throw new RuleError("Complete the showroom delivery address before issuing a tax document.", ["FN-01"]);
-  }
-  return client;
+  return franchiseeInvoiceParties(project, db.vendors?.find((entry) => entry.id === project.franchiseeId));
 }
 
 export function saveSellerProfile(actor: AppUser, profile: SellerProfile) {
@@ -1506,19 +1503,14 @@ export function createChallan(actor: AppUser, consignmentId: string) {
   if (!c) throw new RuleError("Consignment not found.");
   if (c.challanId) throw new RuleError("A delivery challan already exists for this shipment.");
   const project = requireProject(c.projectId);
-  const client = requireInvoiceParties(project);
+  const parties = requireInvoiceParties(project);
 
   const challan = {
     id: nextId("dc"),
     number: nextDocNumber("DC"),
     projectId: c.projectId,
     consignmentId,
-    billTo: { name: client.name, gstin: client.gstin, address: client.billingAddress, state: client.state },
-    shipTo: {
-      name: `Ola Showroom — ${project.site.city}`,
-      address: `${project.site.address}, ${project.site.city} ${project.site.pincode}`,
-      state: project.site.state,
-    },
+    ...parties,
     issuedAt: now(),
     taxableValue: c.taxableValue,
   };
@@ -1538,7 +1530,7 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   if (!consignment.challanId) throw new RuleError("Create the delivery challan before invoicing this shipment.");
   if (consignment.invoiceId) throw new RuleError("This shipment has already been invoiced.");
   const project = requireProject(consignment.projectId);
-  const client = requireInvoiceParties(project);
+  const parties = requireInvoiceParties(project);
   const crates = db.crates.filter((crate) => consignment.crateIds.includes(crate.id));
   const quantities = new Map<string, number>();
   crates.forEach((crate) => crate.itemIds.forEach((itemId) => quantities.set(itemId, (quantities.get(itemId) ?? 0) + (crate.itemQuantities?.[itemId] ?? db.items.find((item) => item.id === itemId)?.qty ?? 0))));
@@ -1554,7 +1546,7 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   const taxable = roundMoney(lines.reduce((sum, line) => sum + line.taxableValue, 0));
   const boqValue = roundMoney(db.items.filter((item) => item.projectId === project.id && item.status !== "CANCELLED").reduce((sum, item) => sum + roundMoney(item.qty * item.pricing.finalPrice), 0));
   if (roundMoney(projectBilledTaxable(project.id) + taxable) > boqValue) throw new RuleError("This would bill more than the approved BOQ value. Check existing milestone and shipment invoices.", ["FN-06"]);
-  // Bill-to may differ from the showroom. Tax follows the declared place of supply.
+  // Both recipients are the franchisee; tax follows the showroom's place of supply.
   const mode = taxMode(project.site.state, db.sellerProfile.state);
   const tax = invoiceTax(taxable, mode);
   const due = new Date(NOW); due.setDate(due.getDate() + 30);
@@ -1562,6 +1554,7 @@ export function issueConsignmentInvoice(actor: AppUser, consignmentId: string) {
   const advanceApplied = Math.min(netPayable, availableVerifiedAdvance(project));
   const invoice = {
     id: nextId("inv"), number: nextDocNumber("INV"), projectId: project.id, clientId: project.clientId,
+    ...parties,
     placeOfSupplyState: project.site.state, lines, taxMode: mode,
     cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst,
     taxableValue: taxable, total: tax.total, retentionPct: 0, retentionAmount: 0, netPayable,
@@ -1641,7 +1634,7 @@ export function issueInvoice(
 ) {
   requireAccounts(actor);
   const project = requireProject(projectId);
-  const client = requireInvoiceParties(project);
+  const parties = requireInvoiceParties(project);
   if (opts.final) {
     const verdict = canRaiseFinalInvoice(project);
     if (!verdict.ok) throw new RuleError(verdict.reasons.join(" "), verdict.blockedBy);
@@ -1688,6 +1681,7 @@ export function issueInvoice(
     number: nextDocNumber("INV"),
     projectId,
     clientId: project.clientId,
+    ...parties,
     placeOfSupplyState: project.site.state,
     lines,
     taxMode: mode,
@@ -1709,6 +1703,40 @@ export function issueInvoice(
   db.invoices.unshift(invoice);
 
   audit(actor, `invoices/${invoice.id}`, "CREATE", `${invoice.number} · ₹${invoice.netPayable}`);
+  commit();
+  return invoice;
+}
+
+/** Correct the display number while every financial relation retains its ID. */
+export function renameInvoice(actor: AppUser, invoiceId: string, value: string, expectedNumber: string) {
+  requireAccounts(actor);
+  if (!actor.active) throw new RuleError("Sign in with an active Accounts login before editing an invoice number.");
+  const invoice = db.invoices.find((entry) => entry.id === invoiceId);
+  if (!invoice) throw new RuleError("Invoice not found. Refresh the invoice register.");
+  const number = value.trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9/-]{0,63}$/.test(number)) throw new RuleError("Use 1–64 letters, numbers, slashes or hyphens for the invoice number.");
+  const sequence = number.split("/").pop()!;
+  if (/^\d+$/.test(sequence) && !Number.isSafeInteger(Number(sequence))) throw new RuleError("The invoice sequence is too long. Use a shorter number.");
+  if (number === invoice.number) return invoice;
+  if (invoice.number !== expectedNumber) throw new RuleError("This invoice number changed in another session. Reload the invoice before editing it.");
+  if (db.invoices.some((entry) => entry.id !== invoiceId && [entry.number, ...(entry.previousNumbers ?? [])].some((used) => used.toUpperCase() === number))) {
+    throw new RuleError("That invoice number is already used or reserved by another invoice. Choose a different number.");
+  }
+  const previous = invoice.number;
+  invoice.number = number;
+  invoice.previousNumbers = [...new Set([...(invoice.previousNumbers ?? []), previous])].filter((used) => used.toUpperCase() !== number);
+  invoice.numberUpdatedAt = now();
+  invoice.numberUpdatedBy = actor.name;
+  // Preserve the allocation floor even when a correction reduces the number.
+  const suffixes = [previous, number].map((used) => Number(used.split("/").pop())).filter(Number.isSafeInteger);
+  db.documentNumberFloor.INV = Math.max(db.documentNumberFloor.INV, ...suffixes);
+  // Live alerts display the current number; the immutable audit retains both.
+  const escaped = previous.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const token = new RegExp(`(^|[^A-Za-z0-9/_-])${escaped}(?=$|[^A-Za-z0-9/_-])`, "g");
+  db.notifications.forEach((entry) => {
+    entry.detail = entry.detail.replace(token, (_match, prefix: string) => `${prefix}${number}`);
+  });
+  audit(actor, `invoices/${invoice.id}`, "RENUMBER", `Invoice number changed from ${previous} to ${number}; linked payments and shipment IDs retained.`);
   commit();
   return invoice;
 }

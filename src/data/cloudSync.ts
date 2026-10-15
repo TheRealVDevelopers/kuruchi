@@ -101,6 +101,27 @@ function mergeWorkspace(base: Record<string, unknown>, local: Record<string, unk
   return clean(mergeValue(base, local, remote));
 }
 
+/** Check number edits against the newest transaction snapshot, not just this tab. */
+function validateInvoiceRenames(base: Record<string, unknown>, local: Record<string, unknown>, remote: Record<string, unknown>, merged: Record<string, unknown>) {
+  const rows = (value: unknown) => isIdArray(value) ? value : [];
+  const original = rows(base.invoices);
+  const remoteRows = rows(remote.invoices);
+  const mergedRows = rows(merged.invoices);
+  const fail = (message: string) => { const error = new Error(message); error.name = "InvoiceNumberConflictError"; throw error; };
+  for (const invoice of rows(local.invoices)) {
+    const before = original.find((entry) => entry.id === invoice.id);
+    if (!before || before.number === invoice.number) continue;
+    const current = remoteRows.find((entry) => entry.id === invoice.id);
+    if (!current || (current.number !== before.number && current.number !== invoice.number)) fail("This invoice changed in another session. Refresh and review its current number before editing again.");
+    const reserved = [invoice.number, ...(Array.isArray(invoice.previousNumbers) ? invoice.previousNumbers : [])].map((number) => String(number).toUpperCase());
+    if (mergedRows.some((other) => other.id !== invoice.id && [other.number, ...(Array.isArray(other.previousNumbers) ? other.previousNumbers : [])].some((number) => reserved.includes(String(number).toUpperCase())))) {
+      fail("That invoice number is already used or reserved by another invoice. Refresh and choose a different number.");
+    }
+    const floor = (payload: Record<string, unknown>) => Number((payload.documentNumberFloor as { INV?: number } | undefined)?.INV ?? 0);
+    merged.documentNumberFloor = { ...(merged.documentNumberFloor as object ?? {}), INV: Math.max(floor(base), floor(local), floor(remote)) };
+  }
+}
+
 export function connectSharedWorkspace(
   readLocal: () => Record<string, unknown>,
   applyRemote: (payload: Record<string, unknown>) => void,
@@ -196,6 +217,7 @@ export function publishSharedWorkspace(readLocal: () => Record<string, unknown>,
         return { nextRevision: currentRevision, payload: remote, generation: currentGeneration, discarded: true };
       }
       const payload = mergeWorkspace(base, local, remote);
+      validateInvoiceRenames(base, local, remote, payload);
       payload.workspaceGeneration = currentGeneration;
       const nextRevision = currentRevision + 1;
       transaction.set(reference, { payload, updatedAt: serverTimestamp(), schemaVersion: 1, revision: nextRevision, generation: currentGeneration }, { merge: true });
@@ -221,8 +243,8 @@ export function publishSharedWorkspace(readLocal: () => Record<string, unknown>,
     const reconciledLocal = mergeWorkspace(local, localAfterWriteStarted, result.payload);
     basePayload = result.payload;
     if (!same(localAfterWriteStarted, reconciledLocal)) applyWorkspace?.(reconciledLocal);
-  }).catch(() => {
-    saveError = "Shared workspace could not be saved. This request has not reached the other teams. Reconnect and retry.";
+  }).catch((error: unknown) => {
+    saveError = error instanceof Error && error.name === "InvoiceNumberConflictError" ? error.message : "Shared workspace could not be saved. This request has not reached the other teams. Reconnect and retry.";
     report(saveError);
   }).finally(() => { pendingWrites -= 1; });
 }

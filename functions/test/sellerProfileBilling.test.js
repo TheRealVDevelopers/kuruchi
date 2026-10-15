@@ -16,6 +16,7 @@ function load(file, imports = {}, globals = {}) {
 }
 
 const profile = { legalName: "Kurchi Projects", gstin: "GST", pan: "PAN", address: "Registered address", state: "Karnataka", pincode: "560001", invoicePrefix: "KP" };
+const parties = load("lib/invoiceParties.ts");
 const accounts = { role: "ACCOUNTS" };
 function actionsHarness() {
   const db = {
@@ -25,7 +26,7 @@ function actionsHarness() {
     consignments: [{ id: "shipment", projectId: "p" }], challans: [],
   };
   let writes = 0;
-  const api = load("data/actions.ts", { "./store": { db, commit: () => { writes++; }, audit: () => {}, nextId: () => "challan", nextDocNumber: () => "DC/1" } });
+  const api = load("data/actions.ts", { "@/lib/invoiceParties": parties, "./store": { db, commit: () => { writes++; }, audit: () => {}, nextId: () => "challan", nextDocNumber: () => "DC/1" } });
   return { db, api, get writes() { return writes; } };
 }
 

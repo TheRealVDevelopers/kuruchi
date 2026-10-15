@@ -14,6 +14,7 @@ function load(file, imports = {}, extra = {}, suffix = "") {
 }
 const money = load("lib/money.ts");
 const rules = load("lib/rules.ts");
+const parties = load("lib/invoiceParties.ts");
 const admin = { role: "ADMIN", uid: "admin", name: "Admin" };
 function owners() {
   const owner = { id: "owner", type: "FRANCHISEE", name: "Old — Franchisee", contactName: "Old", contactPhone: "9876543210", city: "Bengaluru", state: "Karnataka", clientId: "client" };
@@ -74,21 +75,25 @@ test("client portal displays the signed-in client's name, phone and email only",
 test("printed tax invoices show actual challan numbers, advances, receipts, credits and balance", () => {
   let html = "";
   const invoice = { id: "inv", projectId: "p", number: "KP/INV/1", issuedAt: "2026-10-15", dueDate: "2026-11-15", taxMode: "CGST_SGST", cgst: 9, sgst: 9, igst: 0, taxableValue: 100, total: 118, netPayable: 118, retentionAmount: 0, advanceApplied: 20, amountReceived: 30, challanIds: ["internal-dc-id"], lines: [{ description: "<script>bad</script>", hsn: "9403", qty: 1, rate: 100, taxableValue: 100 }] };
-  const api = load("lib/printInvoice.ts", { "@/data/actions": { requireSellerProfile: () => ({ legalName: "Kurchi", gstin: "GST" }) }, "@/lib/money": money, "@/data/repo": { repo: { challans: () => [{ id: "internal-dc-id", number: "KP/DC/2026/1" }], creditNotes: () => [{ amount: 8 }] } } }, { window: { open: () => ({ document: { write: (value) => { html = value; }, close: () => {} } }) } });
-  assert.equal(api.printTaxInvoice(invoice, undefined, { name: "Correct customer", contactPhone: "9876543210", contactEmail: "customer@example.com" }), true);
+  const project = { name: "Correct franchisee", site: { address: "Franchisee address", contactPhone: "9876543210" } };
+  const api = load("lib/printInvoice.ts", { "@/data/actions": { requireSellerProfile: () => ({ legalName: "Kurchi", gstin: "GST" }) }, "@/lib/money": money, "@/data/repo": { repo: { invoiceParties: (p) => parties.franchiseeInvoiceParties(p, { email: "franchisee@example.com" }), challans: () => [{ id: "internal-dc-id", number: "KP/DC/2026/1" }], creditNotes: () => [{ amount: 8 }] } } }, { window: { open: () => ({ document: { write: (value) => { html = value; }, close: () => {} } }) } });
+  assert.equal(api.printTaxInvoice(invoice, project), true);
   assert.match(html, /KP\/DC\/2026\/1/); assert.doesNotMatch(html, /internal-dc-id/);
   assert.match(html, /Advance applied<\/td><td[^>]*>−₹20\.00/);
   assert.match(html, /Other payments received<\/td><td[^>]*>−₹10\.00/);
   assert.match(html, /Balance due<\/td><td[^>]*>₹80\.00/);
-  assert.match(html, /Correct customer/); assert.match(html, /customer@example.com/); assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
+  assert.match(html, /Correct franchisee/); assert.match(html, /franchisee@example.com/); assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
+  assert.equal((html.match(/Correct franchisee/g) || []).length, 2);
+  assert.match(html, /class="brand-logo" src="\/images\/kurchi-logo\.png"/);
+  assert.match(html, /Bill to · Franchisee/); assert.match(html, /Ship to · Franchisee/);
 });
 
 test("invoice project selection recovers when projects load after opening the form", () => {
   let hook = 0;
   const project = { id: "p", name: "Loaded showroom", clientId: "customer", retentionPct: 0, site: { state: "Karnataka", address: "Site", city: "Bengaluru", pincode: "560001" } };
-  const api = load("features/accounts/pages/FinancePages.tsx", { ...jsx, "react": { ...React, useState: (initial) => { hook++; return React.useState(hook === 1 ? "" : initial); } }, "@/data/repo": { repo: { clientById: () => ({ name: "Customer" }), itemsRaw: () => [{ id: "i", name: "Chair", qty: 1, hsnCode: "9403", pricing: { finalPrice: 100 } }], sellerProfile: () => ({ state: "Karnataka" }) } }, "@/lib/money": money, "@/lib/rules": rules }, {}, "\nexports.TestForm = RaiseInvoiceForm;");
+  const api = load("features/accounts/pages/FinancePages.tsx", { ...jsx, "react": { ...React, useState: (initial) => { hook++; return React.useState(hook === 1 ? "" : initial); } }, "@/data/repo": { repo: { invoiceParties: parties.franchiseeInvoiceParties, itemsRaw: () => [{ id: "i", name: "Chair", qty: 1, hsnCode: "9403", pricing: { finalPrice: 100 } }], sellerProfile: () => ({ state: "Karnataka" }) } }, "../components/InvoicePartyDetails": load("features/accounts/components/InvoicePartyDetails.tsx", jsx), "@/lib/money": money, "@/lib/rules": rules }, {}, "\nexports.TestForm = RaiseInvoiceForm;");
   const html = renderToStaticMarkup(React.createElement(api.TestForm, { projects: [project], onSubmit: () => {} }));
-  assert.match(html, /Customer/); assert.match(html, /Chair/);
+  assert.equal((html.match(/Loaded showroom/g) || []).length, 3); assert.match(html, /Chair/);
   assert.doesNotMatch(html.match(/<button[^>]*>Issue GST invoice<\/button>/)?.[0], /\sdisabled=/);
   assert.match(html, /step="any"/);
 });

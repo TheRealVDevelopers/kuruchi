@@ -177,7 +177,7 @@ issuedAt, issuedBy
 status               // ISSUED | PART_PAID | PAID | CREDIT_NOTED
 creditNoteId?
 ```
-Immutable once issued (FN-07).
+Financial values remain immutable once issued (FN-07). Accounts can correct the invoice number; previous numbers and the audit trail are retained.
 
 ### `auditLog/{entryId}`
 ```

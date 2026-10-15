@@ -13,6 +13,7 @@ function compile(file) {
 function pure(file) { const exports = {}; vm.runInNewContext(compile(file), { exports, require: () => ({}) }); return exports; }
 const money = pure("lib/money.ts");
 const rules = pure("lib/rules.ts");
+const parties = pure("lib/invoiceParties.ts");
 const actionSource = compile("data/actions.ts");
 const admin = { role: "ADMIN", name: "Admin" };
 
@@ -30,6 +31,7 @@ function harness() {
     if (name === "./store") return { db, nextId: (prefix) => `${prefix}-${++counter}`, nextDocNumber: (prefix) => `${prefix}/${++counter}`, NOW: new Date(), commit: () => { writes++; }, audit: () => {}, recomputeProject: () => {} };
     if (name === "@/lib/rules") return rules;
     if (name === "@/lib/money") return money;
+    if (name === "@/lib/invoiceParties") return parties;
     return {};
   } });
   return { db, api: exports, get writes() { return writes; } };
@@ -50,6 +52,35 @@ test("six checked ready items produce an invoice containing exactly those six", 
   assert.equal(invoice.taxableValue, 1200);
   assert.equal(JSON.stringify(h.db.items.slice(6)), unselected);
   assert.ok(h.db.items.slice(0, 6).every((item) => item.qtyInvoiced === 2));
+});
+
+test("both invoice and challan recipients use franchisee details instead of the Ola rollout account", () => {
+  const h = harness();
+  const project = h.db.projects[0];
+  project.name = "Franchisee Showroom"; project.franchiseeId = "owner";
+  project.site.gstin = "FRANCHISEE-GST"; project.site.contactName = "Franchisee Owner"; project.site.contactPhone = "9876543210";
+  h.db.vendors = [{ id: "owner", email: "franchisee@example.com" }];
+  h.db.clients = [{ id: "client", name: "Ola HQ", gstin: "OLA-GST", billingAddress: "Ola corporate address" }];
+  const [shipmentId] = h.api.requestSelectedBoqInvoice(admin, ["i0"], "DIRECT_TRUCK", "RECIPIENT");
+  const invoice = h.api.createShipmentBillingPack({ role: "ACCOUNTS" }, shipmentId);
+  for (const document of [invoice, h.db.challans[0]]) {
+    for (const party of [document.billTo, document.shipTo]) {
+      assert.equal(party.name, "Franchisee Showroom"); assert.equal(party.gstin, "FRANCHISEE-GST");
+      assert.equal(party.email, "franchisee@example.com"); assert.match(party.address, /Site, Bengaluru, Karnataka, 560001/);
+      assert.doesNotMatch(JSON.stringify(party), /Ola HQ|OLA-GST|Ola corporate address/);
+    }
+  }
+  project.name = "Renamed later"; project.site.gstin = "CHANGED";
+  assert.equal(invoice.billTo.name, "Franchisee Showroom"); assert.equal(invoice.shipTo.gstin, "FRANCHISEE-GST");
+});
+
+test("milestone invoices use franchisee snapshots and unregistered showrooms never borrow Ola's GSTIN", () => {
+  const h = harness();
+  h.db.projects[0].site.noGstinReason = "Unregistered franchisee";
+  h.db.clients = [];
+  const invoice = h.api.issueInvoice({ role: "ACCOUNTS" }, "p", { final: false, percent: 50, description: "Advance" });
+  assert.equal(invoice.billTo.name, "Showroom"); assert.equal(invoice.shipTo.name, "Showroom");
+  assert.equal(invoice.billTo.gstin, ""); assert.equal(invoice.billTo.noGstinReason, "Unregistered franchisee");
 });
 
 test("shipment invoices cannot bill the BOQ again after a full milestone invoice", () => {

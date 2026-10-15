@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { FilePlus2, Printer, ShieldCheck, Truck, WalletCards } from "lucide-react";
+import { Eye, FilePlus2, Pencil, Printer, ShieldCheck, Truck, WalletCards } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo, receivablesAgeing, retentionQueue, NOW } from "@/data/repo";
 import { useDb } from "@/data/store";
@@ -16,6 +16,9 @@ import type { Challan, Invoice, Payment } from "@/types";
 import { printTaxInvoice } from "@/lib/printInvoice";
 import { PaymentApprovalTasks } from "../components/PaymentApprovalTasks";
 import { ShipmentInvoiceTasks } from "../components/ShipmentInvoiceTasks";
+import { InvoicePartyDetails } from "../components/InvoicePartyDetails";
+import { InvoiceNumberDialog } from "../components/InvoiceNumberDialog";
+import { InvoiceDetailsDialog } from "@/components/app/InvoiceDetailsDialog";
 
 /* ------------------------------------------------------------- dashboard */
 
@@ -371,10 +374,14 @@ export function InvoicesPage() {
   const shipmentId = params.get("shipment") ?? undefined;
   const projectId = params.get("project");
   const [raising, setRaising] = useState(() => new URLSearchParams(search).get("action") === "raise");
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   if (!user) return null;
 
   const invoices = repo.invoices().filter((invoice) => !projectId || invoice.projectId === projectId);
   const projects = repo.projects(user);
+  const viewing = invoices.find((invoice) => invoice.id === viewingId);
+  const editing = invoices.find((invoice) => invoice.id === editingId);
 
   const columns: Column<Invoice>[] = [
     { key: "number", header: "Number", primary: true, cell: (i) => <span className="font-mono text-sm">{i.number}</span> },
@@ -394,7 +401,7 @@ export function InvoicesPage() {
     { key: "retention", header: "Retention", cell: (i) => <span className="tabular-nums text-muted-foreground">−{formatINR(i.retentionAmount)}</span> },
     { key: "net", header: "Net payable", cell: (i) => <span className="tabular-nums font-semibold">{formatINR(i.netPayable)}</span> },
     { key: "received", header: "Received", cell: (i) => <span className="tabular-nums">{formatINR(i.amountReceived)}</span> },
-    { key: "print", header: "Print", cell: (i) => <button type="button" onClick={() => run(() => { printTaxInvoice(i, projects.find((project) => project.id === i.projectId), repo.clientById(i.clientId)); })} className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-bold"><Printer className="h-3.5 w-3.5"/> Print</button> },
+    { key: "actions", header: "Actions", cell: (i) => <div className="flex flex-wrap items-center gap-1.5"><button type="button" title="View invoice" aria-label={`View invoice ${i.number}`} onClick={() => setViewingId(i.id)} className="grid h-9 w-9 place-items-center rounded-lg border bg-background text-primary hover:bg-primary/5"><Eye className="h-4 w-4"/></button>{user.role === "ACCOUNTS" && <button type="button" title="Edit invoice number" aria-label={`Edit invoice number ${i.number}`} onClick={() => setEditingId(i.id)} className="grid h-9 w-9 place-items-center rounded-lg border bg-background hover:bg-muted"><Pencil className="h-4 w-4"/></button>}<button type="button" title="Print invoice" aria-label={`Print invoice ${i.number}`} onClick={() => run(() => { printTaxInvoice(i, projects.find((project) => project.id === i.projectId)); })} className="grid h-9 w-9 place-items-center rounded-lg border bg-background hover:bg-muted"><Printer className="h-4 w-4"/></button></div> },
     {
       key: "status", header: "Status",
       cell: (i) => {
@@ -418,7 +425,7 @@ export function InvoicesPage() {
       <PageHeader
         eyebrow="GST"
         title="Tax invoices"
-        description="CGST+SGST or IGST is computed from place of supply. Issued invoices are immutable."
+        description="View and print invoices, or correct an invoice number. Tax follows the franchisee’s place of supply."
         actions={!shipmentId &&
           <button
             type="button"
@@ -448,10 +455,12 @@ export function InvoicesPage() {
       )}
 
       <ResponsiveTable data={invoices} columns={columns} keyOf={(i) => i.id} minWidth="min-w-[960px]" />
+      {viewing && <InvoiceDetailsDialog invoice={viewing} project={projects.find((project) => project.id === viewing.projectId)} onClose={() => setViewingId(null)}/>}
+      {editing && <InvoiceNumberDialog key={editing.id} invoice={editing} onClose={() => setEditingId(null)}/>}
 
       <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <RuleTag id="FN-02" /> place of supply drives the split ·
-        <RuleTag id="FN-07" /> issued invoices are credit-noted, never edited
+        <RuleTag id="FN-07" /> number corrections are audited; amount corrections use credit notes
       </p>
     </>
   );
@@ -468,7 +477,7 @@ function RaiseInvoiceForm({
   const [percent, setPercent] = useState(100);
   const [description, setDescription] = useState("Approved showroom BOQ");
   const project = projects.find((entry) => entry.id === projectId);
-  const customer = repo.clientById(project?.clientId);
+  const parties = repo.invoiceParties(project);
   const items = project ? repo.itemsRaw(project.id).filter((item) => item.status !== "CANCELLED") : [];
   const boqValue = roundMoney(items.reduce((sum, item) => sum + roundMoney(item.qty * item.pricing.finalPrice), 0));
   const taxable = roundMoney(boqValue * percent / 100);
@@ -504,7 +513,8 @@ function RaiseInvoiceForm({
         </div>
       </div>
       {project && <>
-        <section className="mt-5 grid gap-3 lg:grid-cols-2"><article className="rounded-2xl border bg-muted/35 p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Bill to · Ola / customer</p><p className="mt-2 font-extrabold">{customer?.name || "Customer details missing"}</p><p className="mt-1 text-sm text-muted-foreground">GSTIN: {customer?.gstin || "Not added"}</p><p className="mt-1 text-sm text-muted-foreground">{customer?.contactName || "Contact not added"} · {customer?.contactPhone || "Mobile not added"}</p><p className="mt-1 text-sm text-muted-foreground">{customer?.contactEmail || "Email not added"}</p><p className="mt-2 text-sm leading-relaxed">{customer?.billingAddress || "Billing address not added"}</p></article><article className="rounded-2xl border bg-muted/35 p-4"><p className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Deliver to · showroom</p><p className="mt-2 font-extrabold">{project.name}</p><p className="mt-1 text-sm text-muted-foreground">GSTIN: {project.site.gstin || "Not added"}</p><p className="mt-1 text-sm text-muted-foreground">{project.site.contactName} · {project.site.contactPhone}</p><p className="mt-2 text-sm leading-relaxed">{project.site.address}, {project.site.city}, {project.site.state} — {project.site.pincode}</p><p className="mt-2 text-sm font-bold text-primary">Place of supply: {project.site.state} · {mode === "IGST" ? "IGST" : "CGST + SGST"}</p></article></section>
+        <section className="mt-5 grid gap-3 lg:grid-cols-2"><InvoicePartyDetails title="Bill to" party={parties.billTo}/><InvoicePartyDetails title="Ship to" party={parties.shipTo}/></section>
+        <p className="mt-3 text-sm font-bold text-primary">Place of supply: {project.site.state} · {mode === "IGST" ? "IGST" : "CGST + SGST"}</p>
         <section className="mt-4 overflow-hidden rounded-2xl border"><div className="flex items-center justify-between gap-3 bg-muted/45 px-4 py-3"><div><p className="font-extrabold">{fullBoq ? "Approved BOQ products" : "Milestone invoice"}</p><p className="mt-0.5 text-xs text-muted-foreground">{fullBoq ? `${items.length} product line${items.length === 1 ? "" : "s"} will be printed on the invoice.` : "A milestone invoice uses the description entered above."}</p></div><b>{formatINR(taxable)}</b></div>{fullBoq && <div className="max-h-48 divide-y overflow-y-auto">{items.map((item) => <div key={item.id} className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 text-sm"><div><p className="font-bold">{item.name}</p><p className="mt-0.5 text-xs text-muted-foreground">HSN {item.hsnCode} · {item.qty} {item.unit} × {formatINR(item.pricing.finalPrice)}</p></div><b>{formatINR(item.qty * item.pricing.finalPrice)}</b></div>)}</div>}</section>
 <section className="mt-4 grid gap-2 rounded-2xl bg-rail p-4 text-rail-foreground sm:grid-cols-4"><div><p className="text-xs text-rail-muted">Taxable amount</p><p className="mt-1 font-extrabold">{formatINR(taxable)}</p></div>{mode === "IGST" ? <div><p className="text-xs text-rail-muted">IGST 18%</p><p className="mt-1 font-extrabold">{formatINR(tax.igst)}</p></div> : <><div><p className="text-xs text-rail-muted">CGST 9%</p><p className="mt-1 font-extrabold">{formatINR(tax.cgst)}</p></div><div><p className="text-xs text-rail-muted">SGST 9%</p><p className="mt-1 font-extrabold">{formatINR(tax.sgst)}</p></div></>}<div><p className="text-xs text-rail-muted">Invoice total</p><p className="mt-1 text-lg font-extrabold">{formatINR(tax.total)}</p>{retention > 0 && <p className="text-xs text-rail-muted">Retention: {formatINR(retention)} · Net payable: {formatINR(roundMoney(tax.total - retention))}</p>}</div></section>
       </>}

@@ -152,11 +152,12 @@ test("all three containers render together and share company files while keeping
 });
 
 test("franchisees can read an issued invoice while the seller profile is incomplete", () => {
-  const { TestInvoice } = load("features/franchisee-documents/FranchiseeDocuments.tsx", {
-    ...jsx, "@/data/repo": { repo: { sellerProfile: () => ({}), creditNotes: () => [] } },
+  const { TestInvoice } = load("components/app/InvoiceDetailsDialog.tsx", {
+    ...jsx, "@/data/repo": { repo: { sellerProfile: () => ({}), creditNotes: () => [], invoiceParties: () => ({ billTo: { name: "Ola Indiranagar" }, shipTo: { name: "Ola Indiranagar" } }) } },
+    "@/features/accounts/components/InvoicePartyDetails": { InvoicePartyDetails: () => null },
     "@/lib/money": load("lib/money.ts"), "@/lib/useAction": { formatDate: (value) => value },
     "@/components/ui/dialog": Object.fromEntries(["Dialog", "DialogContent", "DialogDescription", "DialogHeader", "DialogTitle"].map((name) => [name, passthrough])),
-  }, "\nexports.TestInvoice = InvoiceDetails;");
+  }, "\nexports.TestInvoice = InvoiceDetailsDialog;");
   const invoice = { id: "invoice", number: "KP/INV/1", issuedAt: "2026-10-15", dueDate: "2026-11-15", lines: [{ description: "Chair", hsn: "9403", qty: 1, rate: 100, taxableValue: 100 }], taxMode: "CGST_SGST", taxableValue: 100, cgst: 9, sgst: 9, total: 118, netPayable: 118, amountReceived: 0, retentionAmount: 0 };
   const html = renderToStaticMarkup(React.createElement(TestInvoice, { invoice, project: { name: "Ola Indiranagar" }, onClose: () => {} }));
   assert.match(html, /Chair/); assert.match(html, /Balance due/); assert.match(html, /₹118/); assert.match(html, /complete the seller details/);

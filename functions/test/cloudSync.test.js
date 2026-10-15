@@ -120,3 +120,37 @@ test("queued saves belonging to the previous login are not published after switc
   const h = harness(); h.signIn(); h.emit(); h.changeLocal("Old account edit"); h.publish(); h.signOut(); h.signIn(); h.emit(); await settle();
   assert.equal(h.writes, 0); assert.equal(h.local.projects[0].name, "Before");
 });
+
+test("an invoice rename cannot overwrite a number changed concurrently in another browser", async () => {
+  const h = harness();
+  h.server.payload.invoices = [{ id: "invoice", number: "OLD/001" }];
+  h.signIn(); h.emit(); h.local.invoices[0].number = "LOCAL/002";
+  h.server.payload.invoices[0].number = "REMOTE/003";
+  h.publish();
+  await assert.rejects(h.api.waitForSharedWorkspaceSave(), /another session/);
+  assert.equal(h.writes, 0); assert.equal(h.server.payload.invoices[0].number, "REMOTE/003");
+});
+
+test("invoice number uniqueness is checked inside the shared save transaction", async () => {
+  const h = harness();
+  h.server.payload.invoices = [{ id: "invoice", number: "OLD/001" }];
+  h.signIn(); h.emit(); h.local.invoices[0].number = "NEW/002";
+  h.server.payload.invoices.push({ id: "another-invoice", number: "NEW/002" });
+  h.publish();
+  await assert.rejects(h.api.waitForSharedWorkspaceSave(), /already used or reserved/);
+  assert.equal(h.writes, 0);
+});
+
+test("renumbering retains a concurrent payment and the highest reserved invoice sequence", async () => {
+  const h = harness();
+  h.server.payload.invoices = [{ id: "invoice", number: "OLD/100", amountReceived: 0 }];
+  h.server.payload.documentNumberFloor = { INV: 100, DC: 141 };
+  h.signIn(); h.emit(); h.local.invoices[0].number = "NEW/200"; h.local.invoices[0].previousNumbers = ["OLD/100"];
+  h.local.documentNumberFloor.INV = 200;
+  h.server.payload.invoices[0].amountReceived = 500;
+  h.server.payload.documentNumberFloor.INV = 300;
+  h.publish(); await h.api.waitForSharedWorkspaceSave();
+  assert.equal(h.server.payload.invoices[0].number, "NEW/200");
+  assert.equal(h.server.payload.invoices[0].amountReceived, 500);
+  assert.equal(h.server.payload.documentNumberFloor.INV, 300);
+});

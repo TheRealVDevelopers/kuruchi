@@ -336,6 +336,6 @@ export const RULE_INDEX: Array<{ id: string; group: string; text: string }> = [
   { id: "FN-02", group: "Finance", text: "Place of supply decides CGST+SGST vs IGST." },
   { id: "FN-03", group: "Finance", text: "Every taxable line needs an HSN code." },
   { id: "FN-04", group: "Finance", text: "No final invoice until handover is signed." },
-  { id: "FN-07", group: "Finance", text: "An issued invoice is immutable — credit note only." },
+  { id: "FN-07", group: "Finance", text: "Accounts may correct invoice numbers with an audit trail; amount corrections use credit notes." },
   { id: "ES-01", group: "Escalation", text: "Status past its SLA is flagged stale on two dashboards." },
 ];
