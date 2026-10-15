@@ -12,6 +12,9 @@ import { BoqItemBoard } from "@/components/app/BoqItemBoard";
 import { PhotoCapture } from "@/components/app/SiteKit";
 import { canRaiseHandover } from "@/lib/rules";
 import type { TicketCause } from "@/types";
+import { FranchiseeDocuments } from "@/features/franchisee-documents/FranchiseeDocuments";
+import { safeDocumentUrl } from "@/features/franchisee-documents/model";
+import { showroomName, showroomWelcome } from "@/lib/showroom";
 
 export default function VendorWorkPage() {
   useDb();
@@ -22,12 +25,14 @@ export default function VendorWorkPage() {
   const projects = repo.projects(user);
 
   return <>
-    <PageHeader eyebrow="Franchisee workspace" title={`Welcome, ${user.name.split(" ")[0]}`} description="Your showroom, every item, every document and every delivery in one place." />
+    <PageHeader eyebrow="Franchisee workspace" title={showroomWelcome(projects)} description="Your showroom, every item, every document and every delivery in one place." />
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_350px]">
+    <div className="min-w-0 lg:order-2"><FranchiseeDocuments/></div>
+    <div className="min-w-0 lg:order-1">
     {projects.length === 0 ? <EmptyState title="Your location is being set up" hint="Ola or Kurchi will add your showroom shortly." /> : <div className="space-y-5">{projects.map((project) => {
       const items = repo.itemsRaw(project.id);
       const invoices = repo.invoices(project.id);
       const documents = repo.documents(project.id);
-      const consignments = repo.consignments(project.id);
       const value = items.reduce((sum, item) => sum + item.pricing.finalPrice * item.qty, 0);
       const required = project.advanceRequiredPct ?? 0;
       const received = project.advanceReceivedPct ?? 0;
@@ -39,13 +44,13 @@ export default function VendorWorkPage() {
       const productDocs = documents.filter((document) => ["DRAWING", "DESIGN_2D", "DESIGN_3D", "BROCHURE", "BOQ"].includes(document.type));
 
       return <section key={project.id} className="overflow-hidden rounded-3xl border bg-card">
-        <div className="bg-primary px-5 py-5 text-primary-foreground sm:px-7"><p className="text-xs font-bold uppercase tracking-[.16em] text-primary-foreground/70">Your showroom</p><h2 className="mt-1 text-2xl font-extrabold">{project.site.city}</h2><p className="mt-1 text-sm text-primary-foreground/80">{project.site.address}</p></div>
+        <div className="bg-primary px-5 py-5 text-primary-foreground sm:px-7"><p className="text-xs font-bold uppercase tracking-[.16em] text-primary-foreground/70">Your showroom</p><h2 className="mt-1 break-words text-2xl font-extrabold">{showroomName(project)}</h2><p className="mt-1 text-sm text-primary-foreground/80">{project.site.city} · {project.site.address}</p></div>
         <div className="space-y-6 p-5 sm:p-7">
           <div className="grid gap-3 md:grid-cols-3"><Metric label="BOQ amount" value={formatINR(value)} /><Metric label="Advance received" value={`${received}%`} note={`of ${required}% required`} /><Metric label="Next status" value={advanceReady ? "Ready for production" : "Advance pending"} alert={!advanceReady} /></div>
           <section><div className="flex items-center gap-2"><PackageCheck className="h-5 w-5 text-primary"/><div><p className="eyebrow">Live order status</p><h3 className="font-extrabold">Every BOQ line, at a glance</h3></div></div><div className="mt-3 grid gap-2 sm:grid-cols-3"><Metric label="Delivered / installed" value={String(delivered)} /><Metric label="In production" value={String(production)} /><Metric label="Confirmed BOQ items" value={String(confirmed)} /></div></section>
           <section className="grid gap-3 lg:grid-cols-[1fr_1.2fr]"><div className="rounded-2xl border bg-muted/35 p-4"><p className="eyebrow">Kurchi tax reference</p><h3 className="mt-1 font-extrabold">For your accounts team</h3><dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Kurchi GSTIN</dt><dd className="font-bold">Shown on tax invoice</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Kurchi PAN</dt><dd className="font-bold">Shown on tax invoice</dd></div></dl></div><div className="rounded-2xl border bg-card p-4"><p className="eyebrow">Invoices</p><h3 className="mt-1 font-extrabold">Your showroom billing</h3>{invoices.length ? <div className="mt-3 space-y-2">{invoices.map((invoice) => <div key={invoice.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/55 px-3 py-2.5"><div><p className="font-mono text-sm font-bold">{invoice.number}</p><p className="mt-0.5 text-xs text-muted-foreground">{formatINR(invoice.netPayable)} · {invoice.status.replaceAll("_", " ").toLowerCase()}</p></div><span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-bold text-primary">Available</span></div>)}</div> : <p className="mt-3 text-sm text-muted-foreground">No shipment invoice has been raised yet.</p>}</div></section>
           <div><BoqItemBoard items={items} title="Your BOQ - item by item" /></div>
-          <section className="grid gap-3 lg:grid-cols-3"><DocumentGroup title="KYC documents" hint="GST, MSME and cancelled cheque" documents={kyc} /><DocumentGroup title="Product documents" hint="2D/3D drawings, brochure and BOQ" documents={productDocs} /><div className="rounded-2xl border bg-card p-4"><FileText className="h-5 w-5 text-primary"/><p className="eyebrow mt-3">Financial documents</p><h3 className="mt-1 font-extrabold">Invoices and deliveries</h3><p className="mt-2 text-sm text-muted-foreground">{invoices.length} invoice{invoices.length === 1 ? "" : "s"} · {consignments.length} shipment{consignments.length === 1 ? "" : "s"}</p><p className="mt-3 text-xs text-muted-foreground">Each partial shipment has its own invoice and delivery challan.</p></div></section>
+          <details className="rounded-2xl border p-4"><summary className="cursor-pointer text-sm font-extrabold">Your showroom uploads and product drawings</summary><div className="mt-3 grid gap-3 sm:grid-cols-2"><DocumentGroup title="Your KYC submissions" hint="Your showroom’s GST, MSME and cancelled cheque" documents={kyc} /><DocumentGroup title="Product drawings & BOQ" hint="2D/3D drawings, brochure and BOQ" documents={productDocs} /></div></details>
           <KycUploader projectId={project.id} user={user} />
           <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-extrabold">Something arrived damaged?</p><p className="mt-1 text-sm text-muted-foreground">Send a photo report to Kurchi. A replacement follows the same production and delivery flow.</p></div><button type="button" onClick={() => setDamageProject(damageProject === project.id ? "" : project.id)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground"><CircleAlert className="h-4 w-4"/> Report damage</button></div>{damageProject === project.id && <FranchiseeDamageReport items={items} onSubmit={(value) => { const ok = run(() => act.fileTicket(user, { projectId: project.id, type: "DAMAGE", ...value }), "Damage report sent", "Kurchi will review the replacement."); if (ok) setDamageProject(""); }} />}</section>
           <FranchiseeHandover items={items} signed={repo.handoverSigned(project.id)} snags={repo.snags(project.id)} onSign={(otp) => run(() => act.signHandover(user, project.id, otp), "Handover signed", "Kurchi and Ola have been notified.")} />
@@ -53,12 +58,13 @@ export default function VendorWorkPage() {
         </div>
       </section>;
     })}</div>}
+    </div></div>
   </>;
 }
 
 function Metric({ label, value, note, alert }: { label: string; value: string; note?: string; alert?: boolean }) { return <div className={`rounded-2xl border p-4 ${alert ? "border-amber-300 bg-amber-50" : "bg-muted/40"}`}><p className="eyebrow">{label}</p><p className="mt-2 text-xl font-extrabold">{value}</p>{note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}</div>; }
 function FranchiseeHandover({ items, snags, signed, onSign }: { items: ReturnType<typeof repo.itemsRaw>; snags: ReturnType<typeof repo.snags>; signed: { at: string; by: string } | null; onSign: (otp: string) => boolean }) { const [otp, setOtp] = useState(""); const [sent, setSent] = useState(false); const verdict = canRaiseHandover(items, snags); return <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4"><p className="eyebrow">Final step</p><h3 className="mt-1 flex items-center gap-2 font-extrabold"><ShieldCheck className="h-5 w-5 text-primary"/> Franchisee handover sign-off</h3>{signed ? <p className="mt-3 rounded-xl bg-red-100 px-3 py-2 text-sm font-bold text-red-900">Accepted by {signed.by}.</p> : !verdict.ok ? <p className="mt-3 text-sm text-muted-foreground">Available when all items are installed and major snags are closed. {verdict.reasons[0]}</p> : !sent ? <button type="button" onClick={() => setSent(true)} className="mt-3 min-h-11 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground">Send sign-off code</button> : <div className="mt-3 flex flex-wrap gap-2"><input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="6-digit code" className="min-h-11 rounded-xl border bg-background px-3 text-sm"/><button type="button" disabled={otp.length !== 6} onClick={() => { if (onSign(otp)) { setOtp(""); setSent(false); } }} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-extrabold text-primary-foreground disabled:opacity-40">Sign handover</button></div>}<p className="mt-2 text-xs text-muted-foreground">Demo mode accepts any six digits. Live mode will send an OTP to the franchisee’s verified mobile.</p></section>; }
-function DocumentGroup({ title, hint, documents }: { title: string; hint: string; documents: Array<{ id: string; name: string }> }) { return <div className="rounded-2xl border bg-card p-4"><FileText className="h-5 w-5 text-primary"/><p className="eyebrow mt-3">Documents</p><h3 className="mt-1 font-extrabold">{title}</h3><p className="mt-1 text-sm text-muted-foreground">{documents.length ? documents.map((document) => document.name).join(", ") : hint}</p></div>; }
+function DocumentGroup({ title, hint, documents }: { title: string; hint: string; documents: Array<{ id: string; name: string; fileUrl?: string }> }) { return <div className="rounded-2xl border bg-card p-4"><FileText className="h-5 w-5 text-primary"/><h3 className="mt-2 text-sm font-extrabold">{title}</h3>{documents.length ? <ul className="mt-2 space-y-2 text-sm">{documents.map((document) => <li key={document.id}>{safeDocumentUrl(document.fileUrl) ? <a href={safeDocumentUrl(document.fileUrl)} target="_blank" rel="noopener noreferrer" className="font-bold text-primary underline underline-offset-2">{document.name}</a> : document.name}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">{hint}</p>}</div>; }
 function KycUploader({ projectId, user }: { projectId: string; user: NonNullable<ReturnType<typeof useAuth>["user"]> }) {
   const run = useAction();
   const [type, setType] = useState<"KYC_GST" | "KYC_MSME" | "KYC_CANCELLED_CHEQUE">("KYC_GST");

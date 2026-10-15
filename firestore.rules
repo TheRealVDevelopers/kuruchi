@@ -75,6 +75,42 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Two fixed company-wide libraries. Billing stays with its showroom.
+    match /franchiseeLibraryDocuments/{documentId} {
+      function libraryMember() {
+        return signedIn() && role() in ['ADMIN', 'VENDOR']
+          && request.auth.token.get('active', false) == true
+          && get(/databases/$(database)/documents/workspaceProfiles/$(request.auth.uid)).data.active == true;
+      }
+      function validName(data) {
+        return data.name is string && data.name.size() > 0 && data.name.size() <= 160
+          && data.name.matches('.*[^\\s].*');
+      }
+      function validDocument(data) {
+        return data.keys().hasAll(['category', 'name', 'originalName', 'fileUrl', 'storagePath',
+            'contentType', 'size', 'uploadedBy', 'uploadedByUid', 'uploadedAt', 'updatedAt'])
+          && data.keys().hasOnly(['category', 'name', 'originalName', 'fileUrl', 'storagePath',
+            'contentType', 'size', 'uploadedBy', 'uploadedByUid', 'uploadedAt', 'updatedAt'])
+          && data.category in ['KURCHI_KYC', 'INSTRUCTION_MANUAL']
+          && validName(data)
+          && data.originalName is string && data.originalName.size() > 0 && data.originalName.size() <= 500
+          && data.fileUrl is string && data.fileUrl.size() <= 2048
+          && data.fileUrl.matches('https://firebasestorage.googleapis.com/.*')
+          && data.storagePath is string
+          && data.storagePath.matches('franchisee-library/' + data.category + '/' + documentId + '/[a-zA-Z0-9._-]+')
+          && data.contentType in ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+          && data.size is int && data.size > 0 && data.size <= 10 * 1024 * 1024
+          && data.uploadedBy is string && data.uploadedByUid == request.auth.uid
+          && data.uploadedAt == request.time && data.updatedAt == request.time;
+      }
+      allow read: if libraryMember();
+      allow create: if libraryMember() && isAdmin() && validDocument(request.resource.data);
+      allow update: if libraryMember() && isAdmin()
+        && onlyChanging(['name', 'updatedAt']) && validName(request.resource.data)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if libraryMember() && isAdmin();
+    }
+
     // The shared operational cache is only available after Firebase sign-in.
     // Role-sensitive views are additionally filtered in the application.
     match /workspaceState/{id} {

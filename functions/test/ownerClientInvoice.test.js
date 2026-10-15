@@ -48,6 +48,7 @@ test("Accounts shows newly created owners without projects and reflects Admin ed
   const { AccountsFranchiseeOwners } = load("features/accounts/components/AccountsFranchiseeOwners.tsx", { ...jsx,
     "@/features/auth/AuthContext": { useAuth: () => ({ user }) },
     "@/data/store": { useDb: () => {} }, "@/data/repo": { repo },
+    "@/lib/showroom": load("lib/showroom.ts"),
   });
   const render = () => renderToStaticMarkup(React.createElement(AccountsFranchiseeOwners));
   assert.match(render(), /No franchisee owners added yet/);

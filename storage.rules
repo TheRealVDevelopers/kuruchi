@@ -5,6 +5,21 @@ service firebase.storage {
     function signedIn() { return request.auth != null; }
     function staff() { return signedIn() && request.auth.token.role in ['ADMIN', 'ACCOUNTS', 'SUPER_ADMIN']; }
 
+    // Named company documents, published by Admin to the two fixed libraries.
+    match /franchisee-library/{category}/{documentId}/{fileName} {
+      function libraryMember() {
+        return signedIn() && request.auth.token.get('active', false) == true
+          && request.auth.token.role in ['ADMIN', 'VENDOR'];
+      }
+      function fixedCategory() { return category in ['KURCHI_KYC', 'INSTRUCTION_MANUAL']; }
+      allow read: if libraryMember() && fixedCategory();
+      allow create: if libraryMember() && request.auth.token.role == 'ADMIN' && fixedCategory()
+        && request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+      allow delete: if libraryMember() && request.auth.token.role == 'ADMIN' && fixedCategory();
+      allow update: if false;
+    }
+
     // Ola can upload a payment screenshot before its project ID exists. The
     // owner and Accounts/Admin can read it; every other user is excluded.
     match /pending-payment-proofs/{uid}/{fileName} {

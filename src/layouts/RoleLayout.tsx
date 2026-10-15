@@ -16,6 +16,7 @@ import { useDb } from "@/data/store";
 import { repo } from "@/data/repo";
 import * as act from "@/data/actions";
 import { ThemeToggle } from "@/components/app/ThemeToggle";
+import { showroomName } from "@/lib/showroom";
 
 interface NavItem {
   to: string;
@@ -43,7 +44,8 @@ const NAV: Record<Role, NavItem[]> = {
     { to: "/admin/clients", label: "Ola account", icon: Building2 },
     { to: "/admin/catalogue", label: "Catalogue", icon: Package },
     { to: "/admin/kits", label: "BOQ kits", icon: Boxes },
-    { to: "/admin/franchisees", label: "Franchisee owners", icon: Factory },
+    { to: "/admin/franchisees", label: "Franchisee showrooms", icon: Factory },
+    { to: "/admin/franchisee-documents", label: "Franchisee documents", icon: FileText },
     { to: "/admin/cost-centres", label: "Project costs", icon: IndianRupee },
     { to: "/admin/users", label: "Users", icon: Users },
     { to: "/admin/data", label: "Manage data", icon: Database },
@@ -111,6 +113,7 @@ export default function RoleLayout() {
   if (!user) return null;
 
   const meta = ROLE_META[user.role];
+  const accountName = user.role === "VENDOR" ? repo.projects(user).map(showroomName).join(" · ") || "Your showroom" : user.name;
   const items = [...NAV[user.role], { to: "/profile", label: "My profile", icon: UserRound }];
   const notifications = repo.notifications(user);
   const unread = notifications.filter((notification) => !notification.readBy.includes(user.uid));
@@ -157,10 +160,10 @@ export default function RoleLayout() {
     <div className="shrink-0 border-t border-rail-border p-3">
       <div className="flex items-center gap-2 rounded-xl px-2 py-2">
         <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-white", meta.accent)}>
-          {user.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}
+          {accountName.split(" ").map((s) => s[0]).slice(0, 2).join("")}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight text-rail-foreground">{user.name}</p>
+          <p className="truncate text-sm font-semibold leading-tight text-rail-foreground" title={accountName}>{accountName}</p>
           <p className="truncate text-[11px] text-rail-muted">{meta.note}</p>
         </div>
         <button

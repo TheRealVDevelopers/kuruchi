@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { UserPlus } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { repo } from "@/data/repo";
@@ -8,6 +9,7 @@ import { useAction } from "@/lib/useAction";
 import { EmptyState, PageHeader } from "@/components/app/Shell";
 import { Field } from "@/components/app/Form";
 import type { Vendor } from "@/types";
+import { showroomName } from "@/lib/showroom";
 
 export default function FranchiseesPage() {
   useDb();
@@ -16,11 +18,12 @@ export default function FranchiseesPage() {
   const [form, setForm] = useState<Vendor | null>(null);
   if (!user || user.role !== "ADMIN") return null;
   const franchisees = repo.vendors("FRANCHISEE");
+  const projects = repo.projects(user);
   const isNew = Boolean(form && !franchisees.some((owner) => owner.id === form.id));
   const start = () => setForm({ ...act.blankVendor(), type: "FRANCHISEE", clientId: repo.clients()[0]?.id });
 
   return <>
-    <PageHeader eyebrow="Ola rollout" title="Franchisee owners" description="Add and manage the franchisee owner and location." actions={<button type="button" onClick={start} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-bold text-primary-foreground"><UserPlus className="h-4 w-4" /> Add franchisee</button>} />
+    <PageHeader eyebrow="Ola rollout" title="Franchisee showrooms" description="Find each franchisee by showroom name, with owner contact details below." actions={<button type="button" onClick={start} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-bold text-primary-foreground"><UserPlus className="h-4 w-4" /> Add franchisee</button>} />
     {form && <form onSubmit={(event) => {
       event.preventDefault();
       if (run(() => act.saveFranchiseeOwner(user, form), isNew ? "Franchisee added" : "Franchisee updated")) setForm(null);
@@ -36,7 +39,9 @@ export default function FranchiseesPage() {
       <div className="mt-4 flex gap-2"><button className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground">{isNew ? "Add franchisee" : "Save changes"}</button><button type="button" onClick={() => setForm(null)} className="rounded-xl border px-4 py-2.5 text-sm font-bold">Cancel</button></div>
     </form>}
     {franchisees.length === 0 ? <EmptyState title="No franchisee owners yet" hint="Add the first showroom partner to start a BOQ." /> : <div className="grid gap-3 md:grid-cols-2">{franchisees.map((partner) => <article key={partner.id} className="rounded-2xl border bg-card p-5">
-      <p className="eyebrow">Franchisee owner</p><h2 className="mt-1 text-lg font-extrabold">{partner.contactName}</h2>
+      <p className="eyebrow">Franchisee showroom</p>
+      {projects.some((project) => project.franchiseeId === partner.id) ? <div className="mt-1 space-y-1">{projects.filter((project) => project.franchiseeId === partner.id).map((project) => <h2 key={project.id} className="break-words text-lg font-extrabold"><Link to={`/admin/projects/${project.id}`} className="hover:text-primary hover:underline">{showroomName(project)}</Link></h2>)}</div> : <h2 className="mt-1 text-lg font-extrabold">{partner.city ? `${partner.city} showroom` : "Showroom not assigned"}</h2>}
+      <p className="mt-2 text-sm"><span className="text-muted-foreground">Owner: </span>{partner.contactName}</p>
       <p className="mt-1 text-sm text-muted-foreground">{partner.city}, {partner.state} · {partner.contactPhone}</p>
       {partner.email && <p className="mt-1 break-all text-sm text-muted-foreground">{partner.email}</p>}
       <div className="mt-4 flex gap-2"><button type="button" aria-label={`Edit ${partner.contactName}`} onClick={() => setForm({ ...partner })} className="min-h-10 rounded-xl border px-4 text-sm font-bold">Edit</button><button type="button" aria-label={`Delete ${partner.contactName}`} onClick={() => {

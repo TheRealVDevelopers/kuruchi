@@ -32,6 +32,7 @@ import ProcurementPage from "@/features/admin/pages/ProcurementPage";
 import FranchiseesPage from "@/features/admin/pages/FranchiseesPage";
 import LogisticsSettingsPage from "@/features/admin/pages/LogisticsSettingsPage";
 import BusinessProfilePage from "@/features/admin/pages/BusinessProfilePage";
+import FranchiseeDocumentsPage from "@/features/admin/pages/FranchiseeDocumentsPage";
 import { CataloguePage, ClientsPage, KitsPage, VendorsPage, UsersPage } from "@/features/admin/pages/MastersPages";
 
 import MySitesPage from "@/features/site/pages/MySitesPage";
@@ -95,6 +96,7 @@ export default function AppRouter() {
         <Route path="dispatch" element={<DispatchBoardPage />} />
         <Route path="logistics" element={<LogisticsSettingsPage />} />
         <Route path="business-profile" element={<BusinessProfilePage />} />
+        <Route path="franchisee-documents" element={<FranchiseeDocumentsPage />} />
         <Route path="tickets" element={<TicketsQueuePage />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="catalogue" element={<CataloguePage />} />

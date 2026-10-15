@@ -108,6 +108,17 @@ export const repo = {
     projectId ? db.scheduleTasks.filter((task) => task.projectId === projectId) : db.scheduleTasks,
   documents: (projectId?: string) =>
     projectId ? db.documents.filter((d) => d.projectId === projectId) : db.documents,
+  franchiseeBilling: (user: AppUser | null) => {
+    if (!user?.active || user.role !== "VENDOR" || !user.vendorId) return [];
+    return scopeProjects(user).map((project) => ({
+      project,
+      invoices: db.invoices.filter((entry) => entry.projectId === project.id),
+      challans: db.challans.filter((entry) => entry.projectId === project.id),
+      shipments: db.consignments.filter((entry) => entry.projectId === project.id),
+      creditNotes: db.creditNotes.filter((entry) => entry.projectId === project.id),
+      attachments: db.documents.filter((entry) => entry.projectId === project.id && ["INVOICE", "CHALLAN", "EWAY_BILL", "LR", "OTHER"].includes(entry.type)),
+    }));
+  },
   notifications: (user: AppUser | null) =>
     user ? db.notifications.filter((n) => n.role === "ALL" || n.role === user.role).map((n) =>
       user.role === "ACCOUNTS" ? { ...n, link: accountsInboxLink(n, db.projects, db.consignments, db.crates) } : n) : [],
