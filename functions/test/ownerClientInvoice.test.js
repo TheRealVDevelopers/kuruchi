@@ -40,6 +40,29 @@ test("owner deletion requires Admin and protects linked showrooms, logins and bi
 });
 
 const jsx = { "react": React, "react/jsx-runtime": require("../../node_modules/react/jsx-runtime") };
+
+test("Accounts shows newly created owners without projects and reflects Admin edits and removal", () => {
+  const h = owners(); h.db.vendors = [];
+  const { repo } = load("data/repo.ts", { "./store": { db: h.db } });
+  let user = { role: "ACCOUNTS" };
+  const { AccountsFranchiseeOwners } = load("features/accounts/components/AccountsFranchiseeOwners.tsx", { ...jsx,
+    "@/features/auth/AuthContext": { useAuth: () => ({ user }) },
+    "@/data/store": { useDb: () => {} }, "@/data/repo": { repo },
+  });
+  const render = () => renderToStaticMarkup(React.createElement(AccountsFranchiseeOwners));
+  assert.match(render(), /No franchisee owners added yet/);
+  h.api.saveFranchiseeOwner(admin, { ...h.owner, contactName: "New Owner", email: "owner@example.com" });
+  h.db.vendors.push({ id: "supplier", type: "SUPPLIER", name: "Unrelated supplier" });
+  assert.equal(h.db.projects.length, 0);
+  const html = render();
+  for (const text of ["New Owner", "9876543210", "owner@example.com", "Bengaluru", "Karnataka"]) assert.ok(html.includes(text));
+  assert.doesNotMatch(html, /Unrelated supplier|<button/);
+  h.api.saveFranchiseeOwner(admin, { ...h.db.vendors[0], contactName: "Updated Owner" });
+  assert.match(render(), /Updated Owner/); assert.doesNotMatch(render(), /New Owner/);
+  h.api.deleteFranchiseeOwner(admin, "owner");
+  assert.match(render(), /No franchisee owners added yet/);
+  user = { role: "CLIENT" }; assert.equal(render(), "");
+});
 test("client portal displays the signed-in client's name, phone and email only", () => {
   const user = { role: "CLIENT", clientId: "mine", name: "My Client", phone: "9876543210", email: "mine@example.com" };
   const api = load("features/portal/pages/MyShowroomsPage.tsx", { ...jsx, "@/features/auth/AuthContext": { useAuth: () => ({ user }) }, "@/data/store": { useDb: () => {} }, "@/data/repo": { repo: { clientById: (id) => { assert.equal(id, "mine"); return null; }, projects: () => [] } }, "react-router-dom": { Link: (props) => React.createElement("a", { href: props.to }, props.children) }, "lucide-react": { ArrowRight: () => null, BellRing: () => null, Building2: () => null, CheckCircle2: () => null, MapPin: () => null, Plus: () => null }, "@/components/app/Shell": { EmptyState: () => null } });
