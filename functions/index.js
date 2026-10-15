@@ -20,6 +20,7 @@ const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestor
 const { getAuth } = require("firebase-admin/auth");
 const { randomBytes } = require("node:crypto");
 const { normaliseInvite, provisionIdentity, invitationError } = require("./workspaceUserProvisioning");
+const { provisionFranchiseeIdentity } = require("./franchiseeInvitation");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -261,17 +262,11 @@ exports.inviteFranchiseeOwner = onCall(async (request) => {
   if (data.clientId && data.clientId !== clientId) throw new HttpsError("permission-denied", "This showroom belongs to another Ola account.");
 
   const admin = getAuth();
-  let user;
-  try {
-    user = await admin.getUserByEmail(email);
-    user = await admin.updateUser(user.uid, { displayName: name, disabled: false });
-  } catch (error) {
-    if (error.code !== "auth/user-not-found") throw error;
-    user = await admin.createUser({ email, password: temporaryPassword(), displayName: name, disabled: false });
-  }
-  await admin.setCustomUserClaims(user.uid, { role: "VENDOR", active: true, clientId, vendorId });
+  const user = await provisionFranchiseeIdentity(admin, getFirestore(), clientId, { ...data, vendorId, email }, request.auth.uid);
+  await admin.setCustomUserClaims(user.uid, { ...user.customClaims, role: "VENDOR", active: true, clientId, vendorId });
   await getFirestore().collection("workspaceProfiles").doc(user.uid).set({
-    uid: user.uid, name, email, role: "VENDOR", active: true, clientId, vendorId,
+    uid: user.uid, name: user.displayName || name, email: user.email || email, role: "VENDOR", active: true, clientId, vendorId,
+    ...(user.phoneNumber ? { phoneNumber: user.phoneNumber, phone: user.phoneNumber } : {}),
     invitedAt: FieldValue.serverTimestamp(), invitedBy: request.auth.uid,
     passwordSetupRequired: true,
   }, { merge: true });
