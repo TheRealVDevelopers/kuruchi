@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 import type { AppUser, Project } from "@/types";
 import { resubmitInitialPayment } from "@/data/actions";
 import { commit } from "@/data/store";
@@ -19,7 +20,7 @@ export function PaymentCorrection({ project, user }: { project: Project; user: A
   return <section className="mt-5 rounded-3xl border bg-card p-5"><h2 className="text-xl font-extrabold">Correct payment details</h2><p className="mt-2 text-sm text-muted-foreground">Update the amount and reference, then resend this same showroom to Accounts. No new showroom is created.</p><form className="mt-4 space-y-3" onSubmit={async event => {
     event.preventDefault(); if (busy.current) return; busy.current = true; setSaving(true); setError("");
     try {
-      if (!sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect before resending.");
+      if (!IS_LOCAL_DEMO && !sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect before resending.");
       if (!staged) {
         const uploaded = proof ? await uploadPaymentProof(proof, user.uid) : undefined;
         resubmitInitialPayment(user, project.id, { amount: Number(amount), reference, proofName: uploaded?.name, proofUrl: uploaded?.url });

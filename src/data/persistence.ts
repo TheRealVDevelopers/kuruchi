@@ -12,9 +12,10 @@
  */
 
 import type { Db } from "./store";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
-const KEY = "kurchi.db";
-const VERSION_KEY = "kurchi.db.version";
+const KEY = IS_LOCAL_DEMO ? "kurchi.local-demo.db" : "kurchi.db";
+const VERSION_KEY = `${KEY}.version`;
 
 /**
  * Bump this whenever the shape of Db changes in a way old saved data cannot

@@ -13,6 +13,7 @@ import { commit } from "@/data/store";
 import { setManyStatuses } from "@/data/actions";
 import { sharedWorkspaceStatus, waitForSharedWorkspaceSave } from "@/data/cloudSync";
 import { toast } from "sonner";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
 type ItemView = Pick<BoqItem, "id" | "projectId" | "consignmentId" | "name" | "qty" | "unit" | "zone" | "status" | "replacementFor">;
 const ICONS = ["🏭", "📦", "✅", "🚚"];
@@ -45,7 +46,7 @@ export function BoqItemBoard({ items, user, editable = false, title = "Items in 
     if (target === "READY_TO_PACK" && !window.confirm("Confirm quality checks are complete for the selected items.")) return;
     busy.current = true; setSaving(true); setError("");
     try {
-      if (!sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect before updating items.");
+      if (!IS_LOCAL_DEMO && !sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect before updating items.");
       let result = pendingResult;
       if (!result) {
         if (!target || !targets.includes(target)) throw new Error("Select items that can move to the same next stage.");

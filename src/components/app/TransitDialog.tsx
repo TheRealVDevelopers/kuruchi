@@ -4,6 +4,7 @@ import type { AppUser, Consignment } from "@/types";
 import { startShipmentTransit } from "@/data/actions";
 import { waitForSharedWorkspaceSave, sharedWorkspaceStatus } from "@/data/cloudSync";
 import { toast } from "sonner";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
 export function TransitDialog({ shipment, user, onClose }: { shipment: Consignment; user: AppUser; onClose: () => void }) {
   const [mode, setMode] = useState(shipment.deliveryMethod ?? "DIRECT_TRUCK");
@@ -19,7 +20,7 @@ export function TransitDialog({ shipment, user, onClose }: { shipment: Consignme
   return <div role="dialog" aria-modal="true" aria-label="Start transit" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4"><form className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-card p-6" onSubmit={async (event) => {
     event.preventDefault(); if (saving) return; setSaving(true); setError("");
     try {
-      if (!sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect.");
+      if (!IS_LOCAL_DEMO && !sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect.");
       if (!changed) { startShipmentTransit(user, shipment.id, { deliveryMethod: mode, vehicleNo: truck, driverName: driver, driverPhone: phone, eta, awbNumber: awb }); setChanged(true); }
       else { const { commit } = await import("@/data/store"); commit(); }
       await waitForSharedWorkspaceSave(); toast.success("Shipment is in transit"); onClose();

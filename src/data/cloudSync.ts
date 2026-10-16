@@ -10,6 +10,7 @@
 import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db as firestore } from "@/lib/firebase";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
 const COLLECTION = "workspaceState";
 const DOCUMENT = "default";
@@ -29,6 +30,7 @@ let saveError: string | null = null;
 
 /** A workflow handoff is successful only after the shared server acknowledges it. */
 export async function waitForSharedWorkspaceSave() {
+  if (IS_LOCAL_DEMO) return; // Isolated local recording: no claim of a server acknowledgement.
   if (!ready || !sharedWorkspaceStatus.connected) throw new Error("The shared workspace is not connected. Wait for it to reconnect before sending to Accounts.");
   const expectedSession = session;
   await writeQueue;
@@ -190,6 +192,7 @@ export function connectSharedWorkspace(
 }
 
 export function publishSharedWorkspace(readLocal: () => Record<string, unknown>, report: (message: string) => void) {
+  if (IS_LOCAL_DEMO) return;
   if (!firestore || !ready) {
     saveError = "The shared workspace is not connected. This request has not reached Accounts.";
     report(saveError);

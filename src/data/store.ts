@@ -17,6 +17,8 @@ import * as seed from "./seed";
 import * as persist from "./persistence";
 import { connectSharedWorkspace, publishSharedWorkspace } from "./cloudSync";
 import { isFirebaseConfigured } from "@/lib/firebase";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
+import { demoMasters } from "./demoFixture";
 import type {
   AppNotification, AppUser, AuditEntry, BoqItem, ChangeOrder, Challan, Client, SellerProfile,
   Comment, Consignment, Crate, CreditNote, DocumentRecord, Enquiry, InventoryItem,
@@ -105,6 +107,7 @@ function freshFromSeed(): Db {
     enquiries: [],
     audit: [],
     handoverSigned: {},
+    ...(IS_LOCAL_DEMO ? demoMasters() : {}),
   };
 }
 

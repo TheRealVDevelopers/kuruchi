@@ -6,6 +6,8 @@ import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "@/lib/firebase";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
+import { demoUser } from "@/data/demoFixture";
 
 interface AuthState {
   user: AppUser | null;
@@ -14,6 +16,7 @@ interface AuthState {
   sendOtp: (phone: string, recaptchaContainerId: string) => Promise<void>;
   confirmOtp: (code: string) => Promise<AppUser>;
   signOut: () => void;
+  switchDemoRole?: (role: Role, vendorId?: string) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -34,7 +37,14 @@ export const HOME_ROUTE: Record<Role, string> = {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [user, setUser] = useState<AppUser | null>(() => {
+    if (!IS_LOCAL_DEMO) return null;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("kurchi.local-demo.role") ?? "null");
+      if (saved?.role && saved.role in HOME_ROUTE) return demoUser(saved.role, saved.vendorId);
+    } catch { /* start as Ola */ }
+    return demoUser("CLIENT");
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -102,6 +112,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       loading,
+      ...(IS_LOCAL_DEMO ? { switchDemoRole(role: Role, vendorId?: string) {
+        const next = demoUser(role, vendorId);
+        setUser(next);
+        try { sessionStorage.setItem("kurchi.local-demo.role", JSON.stringify({ role, vendorId })); } catch { /* memory only */ }
+      } } : {}),
       async signIn(email: string, password: string) {
         if (!auth || !isFirebaseConfigured) throw new Error("Firebase Authentication is not configured for this deployment.");
         const credential = await signInWithEmailAndPassword(auth, email.trim(), password);

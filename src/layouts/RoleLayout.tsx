@@ -17,6 +17,8 @@ import { repo } from "@/data/repo";
 import * as act from "@/data/actions";
 import { ThemeToggle } from "@/components/app/ThemeToggle";
 import { showroomName } from "@/lib/showroom";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
+import { LocalDemoBar } from "@/components/app/LocalDemoBar";
 
 interface NavItem {
   to: string;
@@ -181,6 +183,7 @@ export default function RoleLayout() {
 
   return (
     <div className="min-h-screen bg-background">
+      {IS_LOCAL_DEMO && <LocalDemoBar />}
       <header className="sticky top-0 z-30 border-b bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex h-[4.5rem] max-w-[84rem] items-center gap-2 px-3 sm:px-6">
           <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>

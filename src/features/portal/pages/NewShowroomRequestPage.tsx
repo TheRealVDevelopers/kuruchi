@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, CreditCard, Store, UserRound } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -13,8 +13,9 @@ import { httpsCallable } from "firebase/functions";
 import { commit, useDb } from "@/data/store";
 import { toast } from "sonner";
 import { sharedWorkspaceStatus, waitForSharedWorkspaceSave } from "@/data/cloudSync";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
-const STATES = ["Andhra Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Karnataka", "Kerala", "Maharashtra", "Tamil Nadu", "Telangana", "Uttar Pradesh", "West Bengal"];
+import { INDIA_STATES as STATES, lookupPinState } from "@/lib/indiaPostal";
 const STEPS = ["Showroom", "Choose BOQ", "Payment"];
 
 export default function NewShowroomRequestPage() {
@@ -34,8 +35,38 @@ export default function NewShowroomRequestPage() {
   const [step, setStep] = useState(0);
   const [showroomName, setShowroomName] = useState("");
   const [city, setCity] = useState("");
-  const [state, setState] = useState("Karnataka");
+  const [state, setSelectedState] = useState("Karnataka");
   const [pincode, setPincode] = useState("");
+  const [pinMessage, setPinMessage] = useState("");
+  const pinLookupVersion = useRef(0);
+  const setState = (value: string) => {
+    ++pinLookupVersion.current;
+    setSelectedState(value);
+    setPinMessage("State selected manually.");
+  };
+  useEffect(() => {
+    const version = ++pinLookupVersion.current;
+    if (pincode.length !== 6) { setPinMessage(""); return; }
+    if (!/^[1-9]\d{5}$/.test(pincode)) {
+      setPinMessage("Enter a valid six-digit PIN code, or select the state manually.");
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setPinMessage("Looking up state from PIN code…");
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    lookupPinState(pincode, controller.signal).then((foundState) => {
+      if (!active || version !== pinLookupVersion.current) return;
+      if (foundState) {
+        setSelectedState(foundState);
+        setPinMessage(`State selected from PIN code: ${foundState}. Please confirm it is correct.`);
+      } else setPinMessage("PIN code not found. Please check it and select the state manually.");
+    }).catch(() => {
+      if (active && version === pinLookupVersion.current)
+        setPinMessage("Could not look up this PIN code. Please select the state manually.");
+    }).finally(() => window.clearTimeout(timeout));
+    return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
+  }, [pincode]);
   const [address, setAddress] = useState("");
   const [gstin, setGstin] = useState("");
   const [noGstin, setNoGstin] = useState(false);
@@ -82,7 +113,7 @@ export default function NewShowroomRequestPage() {
     setSubmitting(true);
     setSubmissionError(null);
     try {
-      if (!sharedWorkspaceStatus.connected) throw new Error("Your shared workspace is still connecting. Please wait and try again; nothing has been sent to Accounts yet.");
+      if (!IS_LOCAL_DEMO && !sharedWorkspaceStatus.connected) throw new Error("Your shared workspace is still connecting. Please wait and try again; nothing has been sent to Accounts yet.");
       let proof: { name: string; url: string } | undefined;
       let proofPendingUpload = false;
       if (proofFile) {
@@ -121,10 +152,14 @@ export default function NewShowroomRequestPage() {
       saveRequest();
       {
         await waitForSharedWorkspaceSave();
-        toast.success("Payment sent to Accounts", { description: "The request is saved in the shared workspace. Accounts can now verify the payment before Admin starts work." });
+        toast.success("Payment sent to Accounts", { description: IS_LOCAL_DEMO ? "Saved in the isolated local demo. Switch to Accounts to verify it." : "The request is saved in the shared workspace. Accounts can now verify the payment before Admin starts work." });
         // Invitation delivery must not hold the saved request on "Saving".
         setSubmitting(false);
         navigate(`/portal/projects/${projectId}`);
+        if (IS_LOCAL_DEMO) {
+          toast.info("Demo invitation simulated", { description: "No real email or SMS was sent. The Franchisee demo role can view this showroom." });
+          return;
+        }
         try {
           if (!functions || !franchiseeId) throw new Error("The franchisee account could not be prepared. Please contact Kurchi Admin.");
           const invite = httpsCallable(functions, "inviteFranchiseeOwner");
@@ -146,6 +181,7 @@ export default function NewShowroomRequestPage() {
   return <div className="mx-auto max-w-4xl">
     {submissionError && <div role="alert" className="sticky top-20 z-20 mb-4 rounded-2xl border border-destructive/40 bg-card p-4 text-sm"><p className="font-extrabold text-destructive">Showroom submission has not been confirmed</p><p className="mt-2">{submissionError}</p><p className="mt-2 text-muted-foreground">Your form is still here. Resolve this error and retry. Do not create a second request.</p></div>}
     <Link to="/portal" className="mb-5 inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Back to showrooms</Link>
+    {step === 0 && pinMessage && <p role="status" aria-live="polite" className="mb-4 rounded-xl border bg-card px-4 py-3 text-sm">{pinMessage}</p>}
     <section className="rounded-[2rem] bg-rail p-6 text-rail-foreground sm:p-8"><p className="text-xs font-bold uppercase tracking-[.16em] text-rail-muted">Ola rollout</p><h1 className="mt-3 text-3xl font-extrabold">Open a new showroom</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-rail-muted">Add the location, choose the Kurchi BOQ, then share the payment reference. Accounts checks payment before Kurchi starts work.</p><div className="mt-7 grid grid-cols-3 gap-2">{STEPS.map((label, index) => <div key={label} className={`rounded-xl px-3 py-2 text-center text-xs font-bold ${index === step ? "bg-primary text-primary-foreground" : index < step ? "bg-white/15 text-white" : "bg-white/5 text-rail-muted"}`}>{index + 1}. {label}</div>)}</div></section>
 
     {step === 0 && <section className="mt-5 space-y-5"><FormCard icon={<Store className="h-5 w-5" />} title="Showroom details" hint="Where Kurchi will build the showroom."><div className="grid gap-3 sm:grid-cols-2"><Field label="Showroom name" value={showroomName} onChange={setShowroomName} placeholder="Ola Electric — Indiranagar" required /><Field label="City" value={city} onChange={setCity} placeholder="Bengaluru" required /><Select label="State" value={state} onChange={setState} options={STATES} /><Field label="PIN code" value={pincode} onChange={(value) => setPincode(value.replace(/\D/g, "").slice(0, 6))} placeholder="560038" required /><div className="sm:col-span-2"><Field label="Full showroom address" value={address} onChange={setAddress} placeholder="Building, road, area and landmark" required /></div><Field label="Showroom GSTIN" value={gstin} onChange={(value) => setGstin(value.toUpperCase())} placeholder="15-character GSTIN" required={!noGstin} /><label className="flex items-center gap-2 self-end pb-3 text-sm font-bold"><input type="checkbox" checked={noGstin} onChange={(event) => setNoGstin(event.target.checked)} /> Showroom has no GSTIN</label>{noGstin && <div className="sm:col-span-2"><Field label="Reason for no GSTIN" value={noGstinReason} onChange={setNoGstinReason} placeholder="Explain why GSTIN is unavailable" required /></div>}<Field label="Expected opening date" type="date" value={openingDate} onChange={setOpeningDate} required /></div></FormCard><FormCard icon={<UserRound className="h-5 w-5" />} title="Franchisee owner" hint="After submission, Kurchi sends this owner a secure link to set their own password and enter their dashboard."><div className="grid gap-3 sm:grid-cols-2"><Field label="Owner name" value={owner} onChange={setOwner} placeholder="Full name" required /><Field label="Mobile number" value={phone} onChange={setPhone} placeholder="+91 98XXX XXXXX" required /><div className="sm:col-span-2"><Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="Owner email for first-time password setup" required /></div></div></FormCard><button disabled={!showroomReady} onClick={() => setStep(1)} className="inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-primary-foreground disabled:opacity-40">Next: choose BOQ <ArrowRight className="h-4 w-4" /></button></section>}

@@ -31,6 +31,7 @@ function harness(shareReferences = false) {
     if (name === "firebase/firestore") return firebase;
     if (name === "firebase/auth") return { onAuthStateChanged: (_, callback) => { authListener = callback; } };
     if (name === "@/lib/firebase") return { auth: {}, db: {} };
+    if (name === "@/lib/demoMode") return { IS_LOCAL_DEMO: false };
     throw new Error(name);
   } });
   exports.connectSharedWorkspace(() => local, (payload) => { local = shareReferences ? payload : copy(payload); }, (message) => reports.push(message));

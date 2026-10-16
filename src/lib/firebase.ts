@@ -13,6 +13,7 @@ import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getFunctions, type Functions } from "firebase/functions";
+import { IS_LOCAL_DEMO } from "./demoMode";
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -24,7 +25,7 @@ const config = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-export const isFirebaseConfigured = Boolean(config.apiKey && config.projectId);
+export const isFirebaseConfigured = !IS_LOCAL_DEMO && Boolean(config.apiKey && config.projectId);
 
 let app: FirebaseApp | null = null;
 let authInstance: Auth | null = null;

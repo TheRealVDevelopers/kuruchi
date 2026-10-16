@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <rect width="800" height="500" fill="#f8f5f2"/>
+  <path d="M230 180 400 100 570 180 570 340 400 420 230 340Z" fill="#c19b6c" stroke="#6d5134" stroke-width="5"/>
+  <path d="M230 180 400 260 570 180M400 260V420M315 140 485 220" fill="none" stroke="#6d5134" stroke-width="5"/>
+  <rect x="0" y="435" width="800" height="65" fill="#e91e45"/>
+  <text x="400" y="470" text-anchor="middle" fill="white" font-family="sans-serif" font-size="22">LOCAL TEST ONLY — packing evidence placeholder</text>
+  <text x="400" y="55" text-anchor="middle" fill="#332a22" font-family="sans-serif" font-size="28">DEMO-CRATE-01 · 4 furniture units</text>
+</svg>

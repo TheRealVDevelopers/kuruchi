@@ -7,6 +7,7 @@ import { commit, useDb } from "@/data/store";
 import { sharedWorkspaceStatus, waitForSharedWorkspaceSave } from "@/data/cloudSync";
 import { formatINR } from "@/lib/money";
 import * as act from "@/data/actions";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
 export function PaymentApprovalTasks({ projectId }: { projectId?: string }) {
   useDb();
@@ -32,7 +33,7 @@ export function PaymentApprovalTasks({ projectId }: { projectId?: string }) {
     approving.current = true;
     setSavingApproval(projectId);
     try {
-      if (!sharedWorkspaceStatus.connected) throw new Error("The shared workspace is not connected. Reconnect before approving this payment.");
+      if (!IS_LOCAL_DEMO && !sharedWorkspaceStatus.connected) throw new Error("The shared workspace is not connected. Reconnect before approving this payment.");
       const project = repo.projectById(user, projectId);
       if (!project?.initialPayment) throw new Error("Payment request not found. Refresh the page.");
       if (pendingDecisions.current[projectId]) {

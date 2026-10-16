@@ -5,6 +5,7 @@ import { repo } from "@/data/repo";
 import { commit } from "@/data/store";
 import { sharedWorkspaceStatus, waitForSharedWorkspaceSave } from "@/data/cloudSync";
 import { toast } from "sonner";
+import { IS_LOCAL_DEMO } from "@/lib/demoMode";
 
 type InvoiceItem = Pick<BoqItem, "id" | "name" | "qty" | "unit" | "consignmentId">;
 
@@ -28,7 +29,7 @@ export function BoqInvoiceDialog({ items, user, onClose, onSaved }: { items: Inv
       if (busy.current) return;
       busy.current = true; setSaving(true); setError("");
       try {
-        if (!sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect before requesting an invoice.");
+        if (!IS_LOCAL_DEMO && !sharedWorkspaceStatus.connected) throw new Error("Wait for the shared workspace to reconnect before requesting an invoice.");
         if (pending) commit();
         else { requestSelectedBoqInvoice(user, items.map((item) => item.id), deliveryMethod, crateCode, { vehicleNo, driverName, driverPhone }); setPending(true); }
         await waitForSharedWorkspaceSave();
